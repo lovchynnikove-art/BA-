@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Business Atlas | Демо голосового помічника</title>
+<meta name="description" content="Демо голосового помічника Business Atlas: B2B-автоматизація, AI-агенти, CRM та ERP.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#07070F">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cpolygon points='100,30 160,65 100,100 40,65' fill='%23c59ce6'/%3E%3Cpolygon points='40,65 100,100 100,170 40,135' fill='%23582187'/%3E%3Cpolygon points='100,100 160,65 160,135 100,170' fill='%238c51c4'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Audiowide&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+:root{
+  --bg:#07070F;--bg-1:#0D0D1F;--bg-card:#131328;--bg-hover:#1A1A38;
+  --purple:#8B5CF6;--purple-light:#C4B5FD;--purple-dark:#7C3AED;--purple-dim:rgba(139,92,246,0.12);--purple-border:rgba(139,92,246,0.2);
+  --orange:#F97A4C;--orange-dark:#EA580C;
+  --t1:#F0EEF8;--t2:#A09DC0;--t3:#5E5B7A;
+  --grad-purple:linear-gradient(135deg,#7C3AED 0%,#A78BFA 100%);
+  --grad-orange:linear-gradient(135deg,#EA580C 0%,#F97A4C 100%);
+  --f-display:'Space Grotesk',sans-serif;
+  --f-body:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --r-md:10px;--r-lg:16px;--r-xl:20px;--r-2xl:28px;
+  --ease:0.24s cubic-bezier(0.4,0,0.2,1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;color-scheme:dark;background:var(--bg)}
+body{font-family:var(--f-body);background:var(--bg);color:var(--t1);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased;position:relative}
+a{color:inherit;text-decoration:none}
+button{cursor:pointer;border:none;background:none;font-family:var(--f-body);color:inherit}
+h1,h2,h3{font-family:var(--f-display);font-weight:600;text-wrap:balance}
+/* зоряне небо, як на сайті, тільки легше */
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.55;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%,rgba(196,181,253,.9),transparent 60%),
+    radial-gradient(1px 1px at 32% 72%,rgba(196,181,253,.7),transparent 60%),
+    radial-gradient(1.5px 1.5px at 58% 28%,rgba(221,214,254,.8),transparent 60%),
+    radial-gradient(1px 1px at 78% 62%,rgba(196,181,253,.7),transparent 60%),
+    radial-gradient(1px 1px at 88% 14%,rgba(253,186,154,.7),transparent 60%),
+    radial-gradient(1px 1px at 46% 90%,rgba(196,181,253,.6),transparent 60%),
+    radial-gradient(1.5px 1.5px at 6% 58%,rgba(221,214,254,.6),transparent 60%),
+    radial-gradient(1px 1px at 68% 46%,rgba(196,181,253,.5),transparent 60%);
+  background-size:520px 520px}
+.container{max-width:1160px;margin:0 auto;padding:0 24px}
+.section{padding:112px 0}
+.section-sm{padding:64px 0}
+.section-alt{background:rgba(13,13,31,0.68)}
+.section-title{font-size:clamp(28px,5vw,44px);font-weight:600;line-height:1.15;letter-spacing:-0.5px;text-align:center;margin-top:16px}
+.section-sub{font-size:17px;color:var(--t2);margin:14px auto 0;max-width:600px;line-height:1.75;text-align:center}
+.grad-purple{background:var(--grad-purple);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.grad-orange{background:var(--grad-orange);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.center{text-align:center}
+.tag{display:inline-flex;align-items:center;gap:6px;background:var(--purple-dim);border:1px solid var(--purple-border);color:var(--purple-light);font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;padding:5px 14px;border-radius:100px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 26px;border-radius:var(--r-lg);font-size:15px;font-weight:600;transition:transform var(--ease),box-shadow var(--ease),background var(--ease),border-color var(--ease);white-space:nowrap}
+.btn:focus-visible{outline:2px solid var(--purple);outline-offset:3px}
+.btn-primary{background:var(--grad-purple);color:#fff;box-shadow:0 4px 20px rgba(124,58,237,.3)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(124,58,237,.5)}
+.btn-accent{background:var(--grad-orange);color:#fff;box-shadow:0 4px 20px rgba(249,122,76,.3)}
+.btn-accent:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(249,122,76,.5)}
+.btn-ghost{border:1px solid var(--purple-border);color:var(--purple-light)}
+.btn-ghost:hover{background:rgba(139,92,246,.1);border-color:var(--purple)}
+.btn-lg{padding:16px 32px;font-size:16px;border-radius:var(--r-xl)}
+.btn-sm{padding:9px 16px;font-size:13px}
+
+/* шапка */
+.header{position:fixed;top:0;left:0;right:0;z-index:200;padding-top:14px}
+.header-inner{display:flex;align-items:center;height:60px;gap:8px;padding:0 12px 0 18px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(15,15,30,.62);backdrop-filter:blur(18px) saturate(150%);-webkit-backdrop-filter:blur(18px) saturate(150%);box-shadow:0 10px 34px -14px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05)}
+.logo{display:flex;align-items:center;gap:10px;margin-right:18px;flex-shrink:0}
+.logo-mark{font-family:'Audiowide',var(--f-display);font-size:20px;letter-spacing:.5px;background:var(--grad-purple);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1}
+.logo-cube{width:22px;height:22px;flex-shrink:0}
+.logo-name{font-family:var(--f-display);font-weight:600;font-size:15px;color:var(--t1);letter-spacing:-.1px;white-space:nowrap}
+.nav{display:flex;align-items:center;gap:2px;flex:1}
+.nav a{position:relative;padding:8px 13px;border-radius:var(--r-md);font-size:14px;font-weight:500;color:var(--t2);transition:color var(--ease),background var(--ease);white-space:nowrap}
+.nav a::after{content:'';position:absolute;left:13px;right:13px;bottom:3px;height:2px;background:var(--grad-purple);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .25s var(--ease)}
+.nav a:hover{color:var(--t1);background:rgba(255,255,255,.05)}
+.nav a:hover::after,.nav a.active::after{transform:scaleX(1)}
+.nav a.active{color:var(--t1)}
+.nav a:focus-visible{outline:2px solid var(--purple);outline-offset:2px}
+.header-cta{margin-left:auto}
+
+/* перший екран */
+.hero{min-height:100vh;display:flex;align-items:center;padding-top:72px;position:relative;overflow:hidden}
+.hero-bg{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 70% 50% at 50% -5%,rgba(124,58,237,.16) 0%,transparent 60%)}
+.hero-grid{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(139,92,246,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(139,92,246,.035) 1px,transparent 1px);background-size:60px 60px;-webkit-mask-image:radial-gradient(ellipse 90% 90% at 50% 50%,black 0%,transparent 100%);mask-image:radial-gradient(ellipse 90% 90% at 50% 50%,black 0%,transparent 100%)}
+.hero-content{position:relative;z-index:1;max-width:720px;margin:0 auto;text-align:center;padding:80px 0}
+.hero-eyebrow{margin-bottom:28px}
+.hero-title{font-size:clamp(32px,4.8vw,56px);line-height:1.15;letter-spacing:-.5px;margin-bottom:24px}
+.hero-sub{font-size:clamp(16px,2.5vw,20px);color:var(--t2);margin:0 auto 40px;line-height:1.75;max-width:600px}
+.hero-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:40px}
+.hero-trust{display:flex;align-items:center;gap:24px;justify-content:center;flex-wrap:wrap}
+.trust-item{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t3);font-weight:500}
+.trust-dot{width:6px;height:6px;border-radius:50%;background:var(--purple);flex-shrink:0;box-shadow:0 0 8px rgba(139,92,246,.6)}
+.hero-visual{position:absolute;right:calc(50% - 580px);top:50%;transform:translateY(-50%);width:200px;pointer-events:none}
+.hero-visual::before{content:'';position:absolute;inset:-30%;border-radius:50%;background:radial-gradient(circle,rgba(124,58,237,.26) 0%,transparent 70%)}
+.hero-visual svg{position:relative;width:100%;height:auto;filter:drop-shadow(0 16px 34px rgba(139,92,246,.4));animation:float 6s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+@media (max-width:1300px){.hero-visual{width:160px}}
+@media (max-width:1160px){.hero-visual{display:none}}
+
+/* бігучий рядок */
+.marquee{display:flex;overflow:hidden;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06);padding:22px 0;-webkit-mask-image:linear-gradient(90deg,transparent,black 8%,black 92%,transparent);mask-image:linear-gradient(90deg,transparent,black 8%,black 92%,transparent)}
+.marquee-track{flex-shrink:0;min-width:100%;display:flex;align-items:center;justify-content:space-around;gap:28px;padding-right:28px;white-space:nowrap;animation:marquee 52s linear infinite}
+.marquee-track span{font-family:var(--f-display);font-weight:600;font-size:clamp(20px,3.4vw,32px);color:var(--t1);letter-spacing:-.2px}
+.marquee-track .sep{color:var(--purple);opacity:.6;font-size:.6em}
+@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+
+/* галузі */
+.industries-label{font-size:12px;font-weight:600;letter-spacing:.6px;color:var(--t3);text-transform:uppercase;margin-bottom:20px;text-align:center}
+.industries-list{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.industries-list span{font-size:13px;font-weight:500;color:var(--t2);background:var(--bg-card);border:1px solid rgba(255,255,255,.07);border-radius:100px;padding:7px 16px}
+
+/* підхід */
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:56px}
+.step-card{position:relative;overflow:hidden;background:var(--bg-card);border:1px solid rgba(255,255,255,.06);border-radius:var(--r-xl);padding:36px 28px;transition:border-color var(--ease),transform var(--ease)}
+.step-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad-purple)}
+.step-card:hover{border-color:var(--purple-border);transform:translateY(-3px)}
+.step-num{font-family:var(--f-display);font-size:52px;font-weight:600;background:var(--grad-purple);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1;margin-bottom:20px;opacity:.35}
+.step-card h3{font-size:17px;font-weight:600;margin-bottom:10px;line-height:1.4}
+.step-card p{font-size:14px;color:var(--t2);line-height:1.7}
+
+/* послуги */
+.numbered{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:56px}
+.num-item{position:relative;overflow:hidden;display:block;background:linear-gradient(180deg,rgba(26,26,52,.55),rgba(17,17,36,.5));padding:30px 26px 28px;border:1px solid rgba(255,255,255,.08);border-radius:var(--r-xl);transition:transform var(--ease),border-color var(--ease),box-shadow var(--ease)}
+.num-item::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--grad-purple);transform:scaleY(0);transform-origin:top center;transition:transform .35s var(--ease)}
+.num-item:hover{transform:translateY(-4px);border-color:var(--purple-border);box-shadow:0 20px 44px -22px rgba(124,58,237,.6)}
+.num-item:hover::before{transform:scaleY(1)}
+.num-index{display:block;font-family:var(--f-display);font-size:15px;font-weight:700;letter-spacing:1px;color:var(--purple-light);opacity:.85;margin-bottom:18px}
+.num-item h3{font-size:17px;font-weight:600;margin-bottom:10px;line-height:1.35}
+.num-item p{font-size:14px;color:var(--t2);line-height:1.65}
+
+/* чому ми */
+.why{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:56px}
+.why-card{background:var(--bg-card);border:1px solid rgba(255,255,255,.06);border-radius:var(--r-xl);padding:30px 28px}
+.why-card h3{font-size:17px;margin-bottom:10px}
+.why-card p{font-size:14px;color:var(--t2);line-height:1.7}
+.why-card .big{font-family:var(--f-display);font-size:34px;font-weight:600;line-height:1.1;margin:14px 0 6px}
+
+/* блок з помічником */
+.voice{position:relative;overflow:hidden}
+.voice-card{position:relative;max-width:980px;margin:0 auto;border-radius:var(--r-2xl);padding:56px 48px;display:grid;grid-template-columns:1.25fr .75fr;gap:40px;align-items:center;
+  background:radial-gradient(120% 140% at 100% 0%,rgba(124,58,237,.28) 0%,rgba(19,19,40,.9) 45%),linear-gradient(180deg,#131328,#0D0D1F);
+  border:1px solid rgba(167,139,250,.32);box-shadow:0 40px 90px -40px rgba(124,58,237,.6)}
+.voice-card::before{content:'';position:absolute;left:10%;right:10%;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(196,181,253,.8),transparent)}
+.voice-card h2{font-size:clamp(26px,3.8vw,38px);line-height:1.2;letter-spacing:-.4px;margin:18px 0 16px}
+.voice-card p{font-size:16.5px;color:var(--t2);line-height:1.75;margin-bottom:28px;max-width:560px}
+.voice-points{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:30px}
+.voice-points span{font-size:13px;color:var(--purple-light);background:var(--purple-dim);border:1px solid var(--purple-border);border-radius:999px;padding:6px 13px}
+.voice-art{position:relative;display:flex;align-items:center;justify-content:center;min-height:220px}
+.voice-art .orb{position:absolute;width:210px;height:210px;border-radius:50%;border:1px solid rgba(167,139,250,.25);animation:spinSlow 18s linear infinite}
+.voice-art .orb.o2{width:260px;height:140px;border-color:rgba(249,122,76,.28);transform:rotate(-24deg);animation:none}
+.voice-art .orb::after{content:'';position:absolute;top:-4px;left:50%;width:8px;height:8px;border-radius:50%;background:var(--orange);box-shadow:0 0 14px var(--orange)}
+.voice-art svg{position:relative;width:128px;height:auto;filter:drop-shadow(0 18px 40px rgba(139,92,246,.55))}
+@keyframes spinSlow{to{transform:rotate(360deg)}}
+.voice-note{font-size:13px;color:var(--t3);margin-top:14px}
+
+/* контакти */
+.contact-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:48px}
+.contact-card{background:var(--bg-card);border:1px solid rgba(255,255,255,.07);border-radius:var(--r-xl);padding:24px 22px;transition:border-color var(--ease),transform var(--ease)}
+.contact-card:hover{border-color:var(--purple-border);transform:translateY(-3px)}
+.contact-card .lbl{font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.contact-card .val{font-family:var(--f-display);font-size:17px;font-weight:600;color:var(--t1);word-break:break-word}
+.contact-card .note{font-size:13px;color:var(--t2);margin-top:6px;line-height:1.5}
+.cta-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:36px}
+
+/* підвал */
+.footer{background:rgba(13,13,31,.72);border-top:1px solid rgba(255,255,255,.05);padding:48px 0 112px}
+.footer-top{display:flex;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:32px}
+.footer-top p{font-size:14px;color:var(--t2);margin-top:14px;line-height:1.7;max-width:320px}
+.footer-links{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.footer-links a{font-size:14px;color:var(--t2);transition:color var(--ease)}
+.footer-links a:hover{color:var(--t1)}
+.footer-bottom{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-top:24px;border-top:1px solid rgba(255,255,255,.05);font-size:13px;color:var(--t3)}
+.footer-bottom a{color:var(--t3)}
+.footer-bottom a:hover{color:var(--purple-light)}
+
+@media (max-width:1024px){.steps{grid-template-columns:repeat(2,1fr)}.numbered,.why{grid-template-columns:repeat(2,1fr)}.contact-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:900px){.nav{display:none}.voice-card{grid-template-columns:1fr;padding:44px 28px}.voice-art{min-height:180px;order:-1}}
+@media (max-width:640px){
+  .section{padding:80px 0}.steps,.numbered,.why,.contact-grid{grid-template-columns:1fr}
+  .header{padding-top:10px}.header-inner{height:54px;padding:0 8px 0 14px}.logo-name{display:none}.logo{margin-right:8px}
+  .hero-content{padding:56px 0}.hero-actions .btn{width:100%}
+  .voice-card{padding:36px 22px}
+}
+@media (max-width:380px){.header-cta{padding:8px 12px;font-size:12px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}html{scroll-behavior:auto}}
+</style>
+</head>
+<body id="top">
+
+<header class="header">
+  <div class="container">
+    <div class="header-inner">
+      <a href="#top" class="logo" aria-label="Business Atlas, на головну">
+        <svg class="logo-cube" viewBox="0 0 200 200" aria-hidden="true"><polygon points="100,30 160,65 100,100 40,65" fill="#c59ce6"/><polygon points="40,65 100,100 100,170 40,135" fill="#582187"/><polygon points="100,100 160,65 160,135 100,170" fill="#8c51c4"/></svg>
+        <span class="logo-mark">BA²</span>
+        <span class="logo-name">Business Atlas</span>
+      </a>
+      <nav class="nav" aria-label="Головне меню">
+        <a href="#top" class="active">Головна</a>
+        <a href="#services">Послуги</a>
+        <a href="#cases">Кейси</a>
+        <a href="#approach">Про нас</a>
+        <a href="#contacts">Контакти</a>
+        <a href="https://businessatlas.space/blog" target="_blank" rel="noopener">Блог</a>
+      </nav>
+      <a href="#contacts" class="btn btn-primary btn-sm header-cta">Замовити дзвінок</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-bg" aria-hidden="true"></div>
+    <div class="hero-grid" aria-hidden="true"></div>
+    <div class="container">
+      <div class="hero-content">
+        <div class="hero-eyebrow"><span class="tag">B2B-автоматизація та AI-системи</span></div>
+        <h1 id="hero-title" class="hero-title">Масштабуйте бізнес<br><span class="grad-purple">без розширення команди</span></h1>
+        <p class="hero-sub">Будуємо AI-агентів та системи автоматизації, які беруть на себе великий обсяг повторюваної роботи, із задокументованим ROI, а не обіцянками.</p>
+        <div class="hero-actions">
+          <a href="#contacts" class="btn btn-accent btn-lg">Замовити дзвінок</a>
+          <a href="#cases" class="btn btn-ghost btn-lg">Дивитись кейси</a>
+        </div>
+        <div class="hero-trust" aria-label="Переваги">
+          <div class="trust-item"><span class="trust-dot" aria-hidden="true"></span>50+ реалізованих проєктів</div>
+          <div class="trust-item"><span class="trust-dot" aria-hidden="true"></span>Клієнти в e-commerce, SaaS та сервісах</div>
+          <div class="trust-item"><span class="trust-dot" aria-hidden="true"></span>Під NDA</div>
+        </div>
+      </div>
+    </div>
+    <div class="hero-visual" aria-hidden="true">
+      <svg viewBox="0 0 200 200"><polygon points="100,30 160,65 100,100 40,65" fill="#c59ce6"/><polygon points="40,65 100,100 100,170 40,135" fill="#582187"/><polygon points="100,100 160,65 160,135 100,170" fill="#8c51c4"/></svg>
+    </div>
+  </section>
+
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee-track"><span>Будуємо системи</span><span class="sep">✦</span><span>AI-агенти</span><span class="sep">✦</span><span>Автоматизація процесів</span><span class="sep">✦</span><span>CRM та ERP</span><span class="sep">✦</span><span>Голосові агенти</span><span class="sep">✦</span></div>
+    <div class="marquee-track"><span>Будуємо системи</span><span class="sep">✦</span><span>AI-агенти</span><span class="sep">✦</span><span>Автоматизація процесів</span><span class="sep">✦</span><span>CRM та ERP</span><span class="sep">✦</span><span>Голосові агенти</span><span class="sep">✦</span></div>
+  </div>
+
+  <section class="section-sm" aria-label="Галузі клієнтів">
+    <div class="container">
+      <p class="industries-label">Клієнти під NDA · працювали з бізнесами в галузях:</p>
+      <div class="industries-list">
+        <span>E-commerce</span><span>SaaS</span><span>Мікромобільність</span><span>Медицина</span><span>Нерухомість</span><span>Освіта</span><span>HoReCa</span><span>Агентства</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="approach" class="section section-alt" aria-labelledby="approach-title">
+    <div class="container">
+      <div class="center"><span class="tag">Підхід</span></div>
+      <h2 id="approach-title" class="section-title">Від статті витрат до <span class="grad-purple">важеля</span></h2>
+      <div class="steps">
+        <div class="step-card"><div class="step-num" aria-hidden="true">01</div><h3>Діагностика</h3><p>Знаходимо, де насправді ховаються ваш обсяг і витрати. Ви отримуєте цифри ще до будь-яких зобов'язань.</p></div>
+        <div class="step-card"><div class="step-num" aria-hidden="true">02</div><h3>Побудова</h3><p>AI-агенти та workflow на вашому стеку. Self-hosted там, де дані не можуть залишати ваш периметр.</p></div>
+        <div class="step-card"><div class="step-num" aria-hidden="true">03</div><h3>Запуск етапами</h3><p>Впроваджуємо відносно виміряної бази, оплата поетапна, ви бачите віддачу ще до наступного кроку.</p></div>
+        <div class="step-card"><div class="step-num" aria-hidden="true">04</div><h3>Доводимо й нарощуємо</h3><p>Запуск - це початок. Міряємо відносно бази й покращуємо систему місяць за місяцем.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="services" class="section" aria-labelledby="svc-title">
+    <div class="container">
+      <div class="center"><span class="tag">Що ми будуємо</span></div>
+      <h2 id="svc-title" class="section-title">Системи, а не <span class="grad-purple">разові скрипти</span></h2>
+      <div class="numbered">
+        <a class="num-item" href="#contacts"><span class="num-index" aria-hidden="true">01</span><h3>AI-агенти підтримки та прийому звернень</h3><p>Закриваємо повторювані звернення від початку до кінця, з реальними діями у ваших системах, а не просто відповідями.</p></a>
+        <a class="num-item" href="#contacts"><span class="num-index" aria-hidden="true">02</span><h3>CRM-автоматизація</h3><p>KeyCRM, Kommo: воронки, збагачення даних і передачі, що працюють самі.</p></a>
+        <a class="num-item" href="#contacts"><span class="num-index" aria-hidden="true">03</span><h3>Автоматизація процесів</h3><p>Пайплайни на n8n та Make, що прибирають ручні кроки між вашими інструментами.</p></a>
+        <a class="num-item" href="#contacts"><span class="num-index" aria-hidden="true">04</span><h3>RAG та асистенти по базі знань</h3><p>Відповіді, обґрунтовані вашими власними документами й даними.</p></a>
+        <a class="num-item" href="#contacts"><span class="num-index" aria-hidden="true">05</span><h3>Інтеграції</h3><p>Нова Пошта, маркетплейси, Checkbox і кастомні API, що зв'язують ваш стек воєдино.</p></a>
+        <a class="num-item" href="#contacts"><span class="num-index" aria-hidden="true">06</span><h3>Аналітика та атрибуція</h3><p>GA4, BigQuery, Looker - пайплайни, що перетворюють розрізнені дані на рішення.</p></a>
+        <a class="num-item" href="#contacts"><span class="num-index" aria-hidden="true">07</span><h3>Кастомні CRM та ERP</h3><p>CRM та ERP під ваші процеси, коли готових рішень уже недостатньо.</p></a>
+      </div>
+    </div>
+  </section>
+
+  <section id="cases" class="section section-alt" aria-labelledby="why-title">
+    <div class="container">
+      <div class="center"><span class="tag">Чому Business Atlas</span></div>
+      <h2 id="why-title" class="section-title">Різниця, яку видно <span class="grad-purple">в цифрах</span></h2>
+      <div class="why">
+        <div class="why-card"><h3>Задокументований ROI, а не обіцянки</h3><p>Кожен проєкт вимірюється відносно бази, яку ви бачите. Флагманський кейс:</p><div class="big grad-purple">41.5%</div><p>з 11 644 звернень закрито без оператора.</p></div>
+        <div class="why-card"><h3>Ваші дані лишаються вашими</h3><p>Self-hosted-опції для команд із вимогами до резиденції даних чи комплаєнсу.</p></div>
+        <div class="why-card"><h3>Поетапно, без прив'язки</h3><p>Ви платите за етап і бачите результат до наступного. Жодних чорних скриньок.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="voice" class="section voice" aria-labelledby="voice-title">
+    <div class="container">
+      <div class="voice-card">
+        <div>
+          <span class="tag">Живе демо</span>
+          <h2 id="voice-title">Поговоріть з нашим <span class="grad-purple">голосовим помічником</span></h2>
+          <p>Куб у кутку екрана - це живий приклад голосових агентів, які ми будуємо для бізнесу: він слухає, думає і відповідає голосом українською. Спитайте, чим ми займаємось, скільки коштує AI-агент або як записатися на безкоштовну консультацію.</p>
+          <div class="voice-points"><span>Відповідає голосом</span><span>Розуміє живу мову</span><span>Передає запит команді</span></div>
+          <button type="button" class="btn btn-primary btn-lg" id="talk-btn">Поговорити з помічником</button>
+          <p class="voice-note">Знадобиться дозвіл на мікрофон. Можна й написати текстом.</p>
+        </div>
+        <div class="voice-art" aria-hidden="true">
+          <div class="orb"></div><div class="orb o2"></div>
+          <svg viewBox="0 0 200 200"><polygon points="100,30 160,65 100,100 40,65" fill="#c59ce6"/><polygon points="40,65 100,100 100,170 40,135" fill="#582187"/><polygon points="100,100 160,65 160,135 100,170" fill="#8c51c4"/></svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="contacts" class="section section-alt" aria-labelledby="contacts-title">
+    <div class="container">
+      <div class="center"><span class="tag">Почніть із цифр</span></div>
+      <h2 id="contacts-title" class="section-title">Порахуймо, скільки <span class="grad-purple">ви заощадите</span></h2>
+      <p class="section-sub">Замовте коротку діагностичну розмову. Покажемо, де повторюваний обсяг коштує вам грошей і скільки насправді варта його автоматизація, незалежно від того, чи працюватимемо разом.</p>
+      <div class="contact-grid">
+        <a class="contact-card" href="tel:+380976244686"><div class="lbl">Телефон</div><div class="val">+38 097 624 46 86</div><div class="note">Цей номер є і в Telegram</div></a>
+        <a class="contact-card" href="mailto:contact@businessatlas.space"><div class="lbl">Email</div><div class="val">contact@<wbr>businessatlas.space</div><div class="note">Для запитів і пропозицій</div></a>
+        <a class="contact-card" href="https://t.me/oleh_marechko" target="_blank" rel="noopener"><div class="lbl">Telegram</div><div class="val">@oleh_marechko</div><div class="note">Олег Маречко, засновник</div></a>
+        <div class="contact-card"><div class="lbl">Графік</div><div class="val">Пн-Пт 9:00-19:00 за Києвом</div><div class="note">Відповідаємо протягом години</div></div>
+      </div>
+      <div class="cta-actions">
+        <a href="tel:+380976244686" class="btn btn-accent btn-lg">Замовити дзвінок</a>
+        <button type="button" class="btn btn-ghost btn-lg" id="talk-btn-2">Спитати голосового помічника</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer" id="footer">
+  <div class="container">
+    <div class="footer-top">
+      <div>
+        <a href="#top" class="logo" aria-label="Business Atlas">
+          <svg class="logo-cube" viewBox="0 0 200 200" aria-hidden="true"><polygon points="100,30 160,65 100,100 40,65" fill="#c59ce6"/><polygon points="40,65 100,100 100,170 40,135" fill="#582187"/><polygon points="100,100 160,65 160,135 100,170" fill="#8c51c4"/></svg>
+          <span class="logo-mark">BA²</span><span class="logo-name">Business Atlas</span>
+        </a>
+        <p>AI-агенти, автоматизація та CRM/ERP для бізнесів, які хочуть масштабуватись без нових наймів.</p>
+      </div>
+      <nav class="footer-links" aria-label="Навігація в підвалі">
+        <a href="#top">Головна</a><a href="#services">Послуги</a><a href="#cases">Кейси</a><a href="#approach">Про нас</a><a href="#contacts">Контакти</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <span>© Business Atlas. Демо голосового помічника.</span>
+      <a href="https://businessatlas.space/privacy" target="_blank" rel="noopener">Політика конфіденційності</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    function talk() { if (window.AtlasVoice) window.AtlasVoice.open(); }
+    document.getElementById('talk-btn').addEventListener('click', talk);
+    document.getElementById('talk-btn-2').addEventListener('click', talk);
+  })();
+</script>
+<script src="atlas-voice.js" data-endpoint="https://n8n.businessautomation.space/webhook" defer></script>
+</body>
+</html>
