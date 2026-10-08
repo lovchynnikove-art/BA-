@@ -1,11 +1,10 @@
 /*!
- * atlas-voice.js | Голосовий помічник Бізнес Атлас (прототип, 18.09.2026)
- * Один класичний скрипт: без модулів, без збірки, без бібліотек і без ключів.
+ * atlas-voice.js | Голосовий помічник Business Atlas на Vapi (ТЗ Олега від 07.10.2026, режим C, веб-дзвінок)
+ * Куб і інтерфейс з прототипу 18.09.2026; розмова через Vapi Web SDK з публічним ключем.
  * Підключення:
- *   <script src="atlas-voice.js" data-endpoint="https://n8n.businessautomation.space/webhook" defer></script>
- * Атрибути: data-endpoint, data-position="right|left", data-demo="true|false".
- * Параметри сторінки: ?demo=1 (режим показу), ?test=1 (сесії test-...),
- *   ?endpoint=<url> (тільки на localhost і 127.0.0.1, для локальної заглушки).
+ *   <script src="atlas-voice.js" data-public-key="..." data-assistant="..." defer></script>
+ * Атрибути: data-public-key, data-assistant, data-position="right|left", data-demo="true|false".
+ * Параметр сторінки ?demo=1: режим показу станів куба без дзвінка.
  */
 (function () {
   'use strict';
@@ -20,38 +19,19 @@
     return null;
   })();
 
-  var DEFAULT_ENDPOINT = 'https://n8n.businessautomation.space/webhook';
   var SESSION_SEC = 300;
-  var TURN_TIMEOUT_MS = 30000;
+  var SDK_URL = 'https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm';
 
   var qs;
   try { qs = new URLSearchParams(location.search); } catch (e) { qs = { get: function () { return null; } }; }
   var ds = (SCRIPT && SCRIPT.dataset) || {};
   var isLocalHost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 
-  function cleanEndpoint(u) {
-    try {
-      var x = new URL(u, location.href);
-      if (x.protocol !== 'https:' && x.protocol !== 'http:') return null;
-      return x.href.replace(/\/+$/, '');
-    } catch (e) { return null; }
-  }
-
-  var endpoint = cleanEndpoint(ds.endpoint || DEFAULT_ENDPOINT) || DEFAULT_ENDPOINT;
-  if (isLocalHost && qs.get('endpoint')) {
-    var ovr = cleanEndpoint(qs.get('endpoint'));
-    if (ovr) endpoint = ovr;
-  }
-
-  var assetBase = '';
-  try { assetBase = new URL('.', (SCRIPT && SCRIPT.src) || location.href).href; } catch (e) { assetBase = ''; }
-
   var CFG = {
-    endpoint: endpoint,
+    publicKey: ds.publicKey || '',
+    assistant: ds.assistant || '',
     position: ds.position === 'left' ? 'left' : 'right',
     demo: ds.demo === 'true' || qs.get('demo') === '1',
-    test: qs.get('test') === '1',
-    assetBase: assetBase,
     reduced: false
   };
   var mqReduce = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -61,14 +41,6 @@
     if (mqReduce.addEventListener) mqReduce.addEventListener('change', onMq);
     else if (mqReduce.addListener) mqReduce.addListener(onMq);
   }
-
-  // Сталі фрази дослівно з backend/prompt_ba_pomichnyk.md, розділ PHRASES.
-  var PHRASES = {
-    greeting: 'Вітаю! Я голосовий помічник Бізнес Атлас на основі штучного інтелекту. Розмову записуємо, щоб передати ваш запит команді. Розкажіть, що хочете автоматизувати, або спитайте, чим ми займаємося.',
-    limit: 'На жаль, час нашої розмови вичерпано. Якщо ви залишили контакти, команда зв\'яжеться з вами протягом години в робочий час, а якщо ні, залиште заявку на сайті. Дякую за розмову!',
-    repeat: 'Вибачте, вас погано чути. Повторіть, будь ласка.',
-    error: 'Вибачте, стався технічний збій. Спробуйте, будь ласка, ще раз за хвилину.'
-  };
 
   var DEMO_Q = 'Чим ви займаєтесь?';
   var DEMO_A = 'Ми Бізнес Атлас: будуємо AI-агентів, автоматизацію процесів і CRM, щоб бізнес ріс без розширення команди. А я сам приклад голосового агента, якого ми робимо для клієнтів.';
@@ -85,12 +57,11 @@
   };
 
   var MIC_MSG = {
-    denied: 'Доступ до мікрофона заборонено. Дозвольте його в налаштуваннях браузера або напишіть питання текстом нижче.',
-    nomic: 'Мікрофон не знайдено. Напишіть питання текстом нижче.',
-    busy: 'Мікрофон зайнятий іншою програмою. Закрийте її або напишіть питання текстом нижче.',
-    insecure: 'Мікрофон працює тільки на захищеному з\'єднанні (https). Поки що напишіть питання текстом нижче.',
-    unsupported: 'Цей браузер не вміє записувати голос. Напишіть питання текстом нижче.',
-    other: 'Не вдалося увімкнути мікрофон. Напишіть питання текстом нижче.'
+    denied: 'Доступ до мікрофона заборонено. Дозвольте його в налаштуваннях браузера і спробуйте ще раз.',
+    nomic: 'Мікрофон не знайдено. Підключіть мікрофон і спробуйте ще раз.',
+    insecure: 'Мікрофон працює тільки на захищеному з\'єднанні (https).',
+    unsupported: 'Цей браузер не підтримує голосову розмову. Спробуйте Chrome, Edge або Safari.',
+    config: 'Помічник ще не налаштований на цьому сайті.'
   };
 
   // ------------------------------------------------------------------ стилі
@@ -194,6 +165,7 @@
     '.chip.auto[aria-pressed=true]{background:var(--go);color:#fff;border-color:transparent}',
 
     '.ctrls{flex:0 0 auto;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:10px 26px 4px}',
+    '.kbd-slot{justify-self:start;width:48px;height:48px}',
     '.kbd{justify-self:start;width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--t2);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);transition:background .2s,color .2s,border-color .2s}',
     '.kbd:hover{color:var(--t1);background:rgba(255,255,255,.08)}',
     '.kbd[aria-pressed=true]{color:#fff;background:rgba(124,58,237,.28);border-color:rgba(167,139,250,.6)}',
@@ -791,167 +763,22 @@
   // ------------------------------------------------------------------ стан
   var S = {
     state: 'idle', open: false,
-    sessionId: null, sessionActive: false, gen: 0, epoch: 0,
-    turnsSent: 0, reported: false, history: [], pending: 0, turnCtls: [], limitDue: 0,
-    connecting: false, micActive: false, fakeMic: false,
-    micStream: null, micSource: null, micAnalyser: null, micRms: 0, vadTimer: 0,
-    recorder: null, recMime: '', recStartedAt: 0,
-    vad: { calibrating: false, samples: [], noise: 0.006, startThr: 0.02, endThr: 0.012, inSpeech: false, aboveSince: 0, belowSince: 0, speechStart: 0, lastVoice: 0, ending: false },
-    speech: null, chain: Promise.resolve(), listenSim: null,
-    timerEnd: 0, timerId: 0, lastErrorPhraseAt: 0,
-    demoRun: null, level: 0, textOpen: false, retries: 0, modeChangedAt: 0, lastMainClickAt: 0,
-    audioBlocked: false, audioNotice: false, acStuckSince: 0, lastResumeTry: 0, greetPending: false,
-    launchAnimUntil: 0, launchRestUntil: 0, launchHover: false
+    sessionActive: false, connecting: false, gen: 0,
+    speech: null, listenSim: null,
+    botSpeaking: false, botLevel: 0, micLevel: 0,
+    timerEnd: 0, timerId: 0,
+    demoRun: null, level: 0, modeChangedAt: 0, lastMainClickAt: 0,
+    launchAnimUntil: 0, launchRestUntil: 0, launchHover: false,
+    vapi: null, sdkP: null, callId: null
   };
   var DBG = window.__atlasVoiceDebug = {
-    state: 'idle', level: 0, lastError: null, sessionId: null, turns: 0,
-    lastTiming: null, audioDecoded: 0, reportsSent: 0, endpoint: CFG.endpoint, demo: CFG.demo
+    state: 'idle', level: 0, lastError: null, callId: null, assistant: CFG.assistant, demo: CFG.demo
   };
   var UI = {};
 
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
-  // ------------------------------------------------------------------ звук
-  var AC = null, outAnalyser = null;
-  var outBuf = null, micBuf = null;
-
-  var AUDIO_NOTICE = 'Браузер призупинив звук. Торкніться куба, щоб його увімкнути.';
-
-  // Safari має ще стан interrupted (дзвінок, інша програма), тому відновлюємо все, що не running
-  function resumeAudio() {
-    if (!AC || AC.state === 'running' || AC.state === 'closed' || !AC.resume) return;
-    S.lastResumeTry = Date.now();
-    try { var pr = AC.resume(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {}
-  }
-
-  function onAudioState() {
-    if (!AC) return;
-    if (AC.state === 'running') {
-      S.audioBlocked = false; S.acStuckSince = 0;
-      if (S.audioNotice) hideNotice();
-    } else if (AC.state !== 'closed' && !document.hidden) resumeAudio();
-  }
-
-  function showAudioNotice() {
-    if (S.audioNotice || !UI.notice || !UI.notice.hidden) return;
-    showNotice(AUDIO_NOTICE);
-    S.audioNotice = true;
-  }
-
-  // iPhone: без увімкненого мікрофона Web Audio слухається перемикача беззвучного режиму.
-  // Тип сесії playback це знімає (Safari 16.4+); перед мікрофоном повертаємо auto.
-  function setAudioSession(type) {
-    try { var as = navigator.audioSession; if (as && as.type !== type) as.type = type; } catch (e) {}
-  }
-
-  function ensureAudio() {
-    if (!AC) {
-      var Ctor = window.AudioContext || window.webkitAudioContext;
-      if (!Ctor) return null;
-      try { AC = new Ctor(); } catch (e) { return null; }
-      outAnalyser = AC.createAnalyser();
-      outAnalyser.fftSize = 1024;
-      outAnalyser.smoothingTimeConstant = 0.2;
-      outAnalyser.connect(AC.destination);
-      outBuf = new Float32Array(outAnalyser.fftSize);
-      try { AC.onstatechange = onAudioState; } catch (e) {}
-    }
-    resumeAudio();
-    return AC;
-  }
-
-  function rmsOf(an, buf) {
-    if (!an) return 0;
-    var sum = 0, i;
-    if (an.getFloatTimeDomainData) {
-      an.getFloatTimeDomainData(buf);
-      for (i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-    } else {
-      var bb = new Uint8Array(an.fftSize);
-      an.getByteTimeDomainData(bb);
-      for (i = 0; i < bb.length; i++) { var x = (bb[i] - 128) / 128; sum += x * x; }
-      return Math.sqrt(sum / bb.length);
-    }
-    return Math.sqrt(sum / buf.length);
-  }
-
-  function decodeAudio(arrayBuf) {
-    return new Promise(function (resolve, reject) {
-      if (!AC) { reject(new Error('no_audio_context')); return; }
-      var done = false;
-      function ok(b) { if (!done) { done = true; DBG.audioDecoded++; resolve(b); } }
-      function bad(e) { if (!done) { done = true; reject(e || new Error('decode_failed')); } }
-      try {
-        var p = AC.decodeAudioData(arrayBuf, ok, bad);
-        if (p && p.then) p.then(ok, bad);
-      } catch (e) { bad(e); }
-    });
-  }
-
-  function b64ToArrayBuffer(b64) {
-    var bin = atob(String(b64).replace(/^data:[^,]*,/, ''));
-    var u = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-    return u.buffer;
-  }
-
-  // ------------------------------------------------------------------ мережа
-  // Таймер діє, доки не прочитано тіло відповіді (read), а не тільки заголовки.
-  function fetchWithTimeout(url, opts, ms, ctl, read) {
-    ctl = ctl || (window.AbortController ? new AbortController() : null);
-    if (ctl) opts.signal = ctl.signal;
-    var timer = setTimeout(function () { if (ctl) { ctl.__timeout = true; ctl.abort(); } }, ms || TURN_TIMEOUT_MS);
-    return fetch(url, opts).then(function (r) { return read ? read(r) : r; }).then(function (v) { clearTimeout(timer); return v; }, function (e) {
-      clearTimeout(timer);
-      if (ctl && ctl.__timeout) { var te = new Error('timeout'); te.name = 'TimeoutError'; throw te; }
-      throw e;
-    });
-  }
-
-  function postJSON(path, body, ms, ctl) {
-    return fetchWithTimeout(CFG.endpoint + path, {
-      method: 'POST', mode: 'cors', credentials: 'omit',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }, ms, ctl, function (r) {
-      if (!r.ok) { var he = new Error('http_' + r.status); he.name = 'HttpError'; throw he; }
-      return r.json();
-    });
-  }
-
-  // ------------------------------------------------------------------ сталі фрази
-  var phraseCache = {}, assetMissing = {};
-
-  function fetchAssetPhrase(key) {
-    if (assetMissing[key] || !CFG.assetBase) return Promise.reject(new Error('asset_missing'));
-    return fetchWithTimeout(CFG.assetBase + 'assets/' + key + '.mp3', { method: 'GET', credentials: 'omit' }, 15000, null, function (r) {
-        if (r.status !== 200) { assetMissing[key] = true; throw new Error('asset_' + r.status); }
-        return r.arrayBuffer();
-      })
-      .then(decodeAudio)
-      .then(function (buf) { return { text: PHRASES[key], buffer: buf }; });
-  }
-
-  function fetchApiPhrase(key) {
-    return postJSON('/ba-pomichnyk-phrase', { key: key }, TURN_TIMEOUT_MS).then(function (j) {
-      if (!j || !j.ok) throw new Error('phrase_' + ((j && j.error) || 'bad'));
-      var text = j.text || PHRASES[key];
-      if (!j.audio_base64) return { text: text, buffer: null };
-      return decodeAudio(b64ToArrayBuffer(j.audio_base64)).then(function (buf) { return { text: text, buffer: buf }; });
-    });
-  }
-
-  function getPhrase(key) {
-    if (phraseCache[key]) return phraseCache[key];
-    var p = fetchAssetPhrase(key)
-      .catch(function () { return fetchApiPhrase(key); })
-      .catch(function () { return { text: PHRASES[key], buffer: null, failed: true }; });
-    phraseCache[key] = p;
-    p.then(function (r) { if (r.failed) delete phraseCache[key]; });
-    return p;
-  }
-
-  // ------------------------------------------------------------------ мовлення і субтитри
+  // ------------------------------------------------------------------ імітація мовлення (тільки режим показу ?demo=1)
   var VOWELS = /[аеєиіїоуюяaeiouy]/gi;
 
   function buildSchedule(text, rate) {
@@ -1001,36 +828,10 @@
     return new Promise(function (resolve) {
       finishSpeech('replaced');
       var text = o.text || '', who = o.who || 'bot';
-      var sp = { text: text, who: who, sc: buildSchedule(text), resolve: resolve, done: false, real: false, sim: false, loop: !!o.loop, shown: -1, tt: 0, looped: false, greeting: !!o.greeting };
-      if (o.buffer && AC) {
-        if (!S.micActive && !S.connecting) setAudioSession('playback');
-        resumeAudio();
-        var src = null;
-        try { src = AC.createBufferSource(); src.buffer = o.buffer; src.connect(outAnalyser); } catch (e) { src = null; }
-        if (src) {
-          sp.src = src; sp.real = true; sp.dur = o.buffer.duration;
-          sp.t0 = AC.currentTime + 0.05; sp.k = sp.sc.total / Math.max(0.2, sp.dur);
-          src.onended = function () { finishSpeech('ended', sp); };
-          try { src.start(sp.t0); } catch (e) { sp.real = false; }
-          if (sp.real) {
-            sp.guard = setTimeout(function () { finishSpeech('ended', sp); }, (sp.dur + 3) * 1000);
-            setTimeout(function () {
-              if (sp.done || AC.state === 'running') return;
-              // звук заблоковано: показуємо текст повністю і підказку, наступний дотик відновить звук
-              S.audioBlocked = true;
-              showAudioNotice();
-              finishSpeech('blocked', sp);
-              announce(who, text);
-            }, 1500);
-          }
-        }
-      }
-      if (!sp.real && o.simulate) { sp.sim = true; sp.p0 = performance.now(); sp.k = 1; }
-      if (!sp.real && !sp.sim) { setCaption(who, text, false); announce(who, text); resolve('text'); return; }
+      var sp = { text: text, who: who, sc: buildSchedule(text), resolve: resolve, done: false, loop: !!o.loop, shown: -1, tt: 0, looped: false, p0: performance.now() };
       S.speech = sp;
       setCaption(who, '', true);
-      // екранний диктор читає текст тільки без справжнього звуку, щоб не накладатись на голос
-      if (!sp.real) announce(who, text);
+      announce(who, text);
       setState(o.visual || (who === 'user' ? 'listening' : 'speaking'), o.status);
     });
   }
@@ -1039,45 +840,18 @@
     sp = sp || S.speech;
     if (!sp || sp.done) return;
     sp.done = true;
-    if (sp.guard) clearTimeout(sp.guard);
-    if (sp.src) {
-      sp.src.onended = null;
-      try { sp.src.stop(); } catch (e) {}
-      try { sp.src.disconnect(); } catch (e) {}
-    }
     if (S.speech === sp) S.speech = null;
     setCaption(sp.who, sp.text, false);
     sp.resolve(reason);
   }
 
-  function enqueueSpeak(o) {
-    var ep = S.epoch;
-    var p = S.chain.then(function () {
-      if (ep !== S.epoch) { if (!o.quiet) setCaption(o.who || 'bot', o.text, false); return 'skipped'; }
-      return speak(o);
-    });
-    S.chain = p.catch(function () {});
-    return p;
-  }
-
-  // Перебити привітання: зупиняється тільки воно, відповідь на вже поставлене питання ще прозвучить.
-  // Перебити відповідь: зупиняється вся черга мовлення.
-  function interrupt() {
-    if (!(S.speech && S.speech.greeting)) S.epoch++;
-    finishSpeech('stopped');
-  }
-
   function updateSpeech(now) {
     var sp = S.speech;
     if (!sp) return;
-    var tt;
-    if (sp.real) { tt = (AC.currentTime - sp.t0) * sp.k; if (tt < 0) tt = 0; }
-    else {
-      tt = (now - sp.p0) / 1000;
-      if (tt >= sp.sc.total) {
-        if (sp.loop) { sp.p0 = now; sp.sc.idx = 0; tt = 0; sp.looped = true; }
-        else { finishSpeech('ended', sp); return; }
-      }
+    var tt = (now - sp.p0) / 1000;
+    if (tt >= sp.sc.total) {
+      if (sp.loop) { sp.p0 = now; sp.sc.idx = 0; tt = 0; sp.looped = true; }
+      else { finishSpeech('ended', sp); return; }
     }
     sp.tt = tt;
     if (!sp.looped) {
@@ -1094,47 +868,18 @@
     };
   }
 
+  // Рівень для куба: у розмові це рівні з Vapi (голос асистента і мікрофон), у показі імітація
   function currentLevel(now) {
     var sp = S.speech;
-    if (sp) {
-      if (sp.real) return Math.pow(clamp(rmsOf(outAnalyser, outBuf) / 0.16, 0, 1), 0.75);
-      return envAt(sp.sc, sp.tt);
-    }
+    if (sp) return envAt(sp.sc, sp.tt);
     if (S.listenSim && S.state === 'listening') return S.listenSim(now);
-    if (S.state === 'listening' && S.micAnalyser) return Math.pow(clamp((S.micRms - S.vad.noise) / 0.08, 0, 1), 0.6);
+    if (S.sessionActive && S.state === 'speaking') return Math.pow(clamp(S.botLevel, 0, 1), 0.6);
+    if (S.sessionActive && S.state === 'listening') return Math.pow(clamp(S.micLevel * 2.2, 0, 1), 0.6);
     return 0;
   }
 
-  // ------------------------------------------------------------------ сесія, таймер, звіт
-  function uuid() {
-    try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
-    var b = new Uint8Array(16), i;
-    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(b);
-    else for (i = 0; i < 16; i++) b[i] = Math.random() * 256 | 0;
-    b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
-    var h = [];
-    for (i = 0; i < 16; i++) h.push((b[i] + 256).toString(16).slice(1));
-    return h.slice(0, 4).join('') + '-' + h.slice(4, 6).join('') + '-' + h.slice(6, 8).join('') + '-' + h.slice(8, 10).join('') + '-' + h.slice(10).join('');
-  }
-
-  function newSession() {
-    S.gen++; S.epoch++;
-    S.sessionId = (CFG.test ? 'test-' : '') + uuid();
-    S.sessionActive = true; S.turnsSent = 0; S.reported = false; S.history = [];
-    S.pending = 0; S.lastErrorPhraseAt = 0; S.fakeMic = false; S.limitDue = 0; S.greetPending = false;
-    S.chain = Promise.resolve();
-    DBG.sessionId = S.sessionId; DBG.turns = 0; DBG.lastError = null; DBG.lastTiming = null;
-    clearCaptions(); hideNotice();
-    startTimer(SESSION_SEC);
-    updateControls();
-  }
-
-  function pushHistory(role, text) {
-    if (!text) return;
-    S.history.push({ role: role, text: String(text).slice(0, 600) });
-    if (S.history.length > 40) S.history.splice(0, S.history.length - 40);
-  }
-
+  // ------------------------------------------------------------------ таймер
+  // Межу 5 хв тримає сам Vapi (maxDurationSeconds 300); тут тільки показ і запасна зупинка
   function startTimer(sec) {
     S.timerEnd = Date.now() + sec * 1000;
     clearInterval(S.timerId);
@@ -1145,527 +890,143 @@
   function tickTimer() {
     var left = Math.max(0, Math.ceil((S.timerEnd - Date.now()) / 1000));
     renderTimer(left, true);
-    if (left > 0 || !S.sessionActive) return;
-    // репліка вже в роботі (оплачена) або відповідь звучить: даємо їй договорити, нових не починаємо,
-    // але не довше 20 с
-    if (S.pending > 0 || S.speech || S.vad.ending) {
-      if (!S.limitDue) {
-        S.limitDue = Date.now();
-        if (S.state === 'listening') { discardRecorder(); S.listenSim = null; setState('thinking', 'Час розмови вичерпано'); }
-        updateControls();
-      } else if (Date.now() - S.limitDue > 20000) onLimit(null);
-      return;
+    if (S.sessionActive && Date.now() - S.timerEnd > 10000) stopCall();
+  }
+
+  // ------------------------------------------------------------------ Vapi
+  // Збірка +esm на jsDelivr загортає клас двічі, тому шукаємо конструктор
+  function pickVapi(mod) {
+    if (typeof mod === 'function') return mod;
+    if (mod && typeof mod.default === 'function') return mod.default;
+    if (mod && mod.default && typeof mod.default.default === 'function') return mod.default.default;
+    if (mod && typeof mod.Vapi === 'function') return mod.Vapi;
+    return null;
+  }
+
+  function getVapi() {
+    if (S.vapi) return Promise.resolve(S.vapi);
+    if (!S.sdkP) {
+      S.sdkP = import(SDK_URL).then(function (mod) {
+        var V = pickVapi(mod);
+        if (!V) throw new Error('sdk_bad');
+        var v = new V(CFG.publicKey);
+        bindVapi(v);
+        S.vapi = v;
+        return v;
+      });
+      S.sdkP.catch(function () { S.sdkP = null; });
     }
-    onLimit(null);
-  }
-  function syncTimer(sec) {
-    if (typeof sec !== 'number' || !(sec >= 0)) return;
-    var end = Date.now() + sec * 1000;
-    if (end < S.timerEnd) S.timerEnd = end;
+    return S.sdkP;
   }
 
-  function reportUrl() { return CFG.endpoint + '/ba-pomichnyk-report'; }
-
-  function sendReport(reason) {
-    if (S.reported || !S.turnsSent || !S.sessionId) return;
-    S.reported = true;
-    var body = JSON.stringify({ session_id: S.sessionId, reason: reason });
-    DBG.reportsSent++;
-    try {
-      fetch(reportUrl(), {
-        method: 'POST', mode: 'cors', credentials: 'omit', keepalive: true,
-        headers: { 'Content-Type': 'application/json' }, body: body
-      }).then(function (r) {
-        if (!r.ok) DBG.lastError = 'report: http_' + r.status;
-      }, function (e) { DBG.lastError = 'report: ' + ((e && e.message) || 'network'); });
-    } catch (e) { DBG.lastError = 'report: ' + e.message; }
+  function bindVapi(v) {
+    v.on('call-start', function () {
+      S.connecting = false;
+      if (!S.sessionActive) return;
+      hideNotice();
+      setState('listening');
+    });
+    v.on('call-end', function () {
+      var was = S.sessionActive;
+      endConversation();
+      if (was && S.state !== 'error') setState('ended');
+    });
+    v.on('speech-start', function () {
+      if (!S.sessionActive) return;
+      S.botSpeaking = true;
+      setState('speaking');
+    });
+    v.on('speech-end', function () {
+      if (!S.sessionActive) return;
+      S.botSpeaking = false; S.botLevel = 0;
+      setState('listening');
+    });
+    v.on('volume-level', function (x) { S.botLevel = +x || 0; });
+    v.on('local-volume-level', function (x) { S.micLevel = +x || 0; });
+    v.on('message', function (m) {
+      if (!m || !S.sessionActive) return;
+      if (m.type === 'transcript' && m.transcript) {
+        var who = m.role === 'user' ? 'user' : 'bot';
+        var fin = m.transcriptType === 'final';
+        if (who === 'user') {
+          setCaption('user', m.transcript, false);
+          if (!fin) UI.capUser.classList.add('pending');
+        } else {
+          if (fin) S.botFinal = (S.botFinal ? S.botFinal + ' ' : '') + m.transcript;
+          setCaption('bot', fin ? S.botFinal : ((S.botFinal ? S.botFinal + ' ' : '') + m.transcript), !fin);
+        }
+        if (fin) announce(who, m.transcript);
+      } else if (m.type === 'speech-update' && m.role === 'assistant' && m.status === 'started') {
+        S.botFinal = '';
+      }
+    });
+    v.on('error', function (e) {
+      var msg = (e && (e.errorMsg || e.message || (e.error && e.error.message))) || 'unknown';
+      DBG.lastError = 'vapi: ' + (typeof msg === 'string' ? msg : JSON.stringify(msg));
+      var was = S.sessionActive;
+      endConversation();
+      if (was || S.connecting) failState(e);
+    });
   }
 
-  window.addEventListener('pagehide', function (e) {
-    if (S.sessionActive && S.turnsSent && !S.reported && navigator.sendBeacon) {
-      try {
-        var ok = navigator.sendBeacon(reportUrl(), new Blob([JSON.stringify({ session_id: S.sessionId, reason: 'closed' })], { type: 'text/plain' }));
-        if (ok) { S.reported = true; DBG.reportsSent++; }
-      } catch (e2) {}
-    }
-    // сторінка йде в кеш «назад-вперед» і може повернутись: розмову закінчуємо тут,
-    // щоб після повернення не тривала сесія, звіт якої вже надіслано
-    if (e && e.persisted && S.sessionActive) {
-      endConversation('closed');
-      setState('ended');
-    }
-  });
-
-  function abortTurns() {
-    var list = S.turnCtls;
-    S.turnCtls = [];
-    for (var i = 0; i < list.length; i++) { try { list[i].abort(); } catch (e) {} }
+  function failState(e) {
+    S.connecting = false;
+    var name = e && (e.name || (e.error && e.error.name) || '');
+    var txt = String((e && (e.errorMsg || e.message)) || '');
+    if (/NotAllowed|Permission|denied/i.test(name + ' ' + txt)) showNotice(MIC_MSG.denied);
+    else if (/NotFound|no.*device/i.test(name + ' ' + txt)) showNotice(MIC_MSG.nomic);
+    setState('error');
   }
 
-  function endConversation(reason) {
+  function micSupportProblem() {
+    if (!window.isSecureContext && !isLocalHost) return 'insecure';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return 'unsupported';
+    return '';
+  }
+
+  function startCall() {
+    stopDemo();
+    hideNotice();
+    if (!CFG.publicKey || !CFG.assistant) { DBG.lastError = 'config'; showNotice(MIC_MSG.config); setState('error'); return; }
+    var problem = micSupportProblem();
+    if (problem) { showNotice(MIC_MSG[problem]); setState('error'); return; }
+    S.gen++;
+    var gen = S.gen;
+    S.sessionActive = true; S.connecting = true; S.botSpeaking = false; S.botLevel = 0; S.micLevel = 0; S.botFinal = '';
+    clearCaptions();
+    startTimer(SESSION_SEC);
+    setState('thinking', 'З\'єдную');
+    getVapi().then(function (v) {
+      if (gen !== S.gen || !S.sessionActive) return;
+      // Веб-дзвінок: переведення на телефон не робимо (ТЗ, режим C)
+      return v.start(CFG.assistant, { variableValues: { transfer_allowed: 'ні' } }).then(function (call) {
+        if (call && call.id) { S.callId = call.id; DBG.callId = call.id; }
+        if (gen !== S.gen) { try { v.stop(); } catch (e) {} }
+      });
+    }).catch(function (e) {
+      if (gen !== S.gen) return;
+      DBG.lastError = 'start: ' + ((e && (e.errorMsg || e.message)) || 'failed');
+      endConversation();
+      failState(e);
+    });
+  }
+
+  function stopCall() {
+    var v = S.vapi;
+    endConversation();
+    if (v) { try { v.stop(); } catch (e) {} }
+  }
+
+  function endConversation() {
     if (!S.sessionActive) return;
-    S.sessionActive = false; S.connecting = false; S.limitDue = 0; S.greetPending = false;
-    S.gen++; S.epoch++;
+    S.sessionActive = false; S.connecting = false; S.botSpeaking = false; S.botLevel = 0; S.micLevel = 0;
+    S.gen++;
     stopTimer();
-    abortTurns();
-    S.pending = 0;
-    stopMic();
-    finishSpeech('stopped');
-    S.fakeMic = false; S.listenSim = null;
-    sendReport(reason);
     renderTimer(Math.max(0, Math.ceil((S.timerEnd - Date.now()) / 1000)), false);
     updateControls();
   }
 
-  function onLimit(text) {
-    if (!S.sessionActive) return;
-    endConversation('limit');
-    var gen = S.gen;
-    getPhrase('limit').then(function (p) {
-      if (gen !== S.gen) return;
-      return speak({ text: text || p.text, buffer: p.buffer });
-    }).then(function () {
-      if (gen !== S.gen) return;
-      setState('ended', 'Час розмови вичерпано');
-    });
-  }
-
-  function settle(gen) {
-    if (gen !== undefined && gen !== S.gen) return;
-    if (!S.sessionActive || S.speech) return;
-    if (S.pending > 0) { setState('thinking'); return; }
-    if (S.greetPending) return;
-    if (S.limitDue && !S.vad.ending) { onLimit(null); return; }
-    if (S.state === 'error') return;
-    if (S.micActive || S.fakeMic) { startListening(); return; }
-    setState('idle', S.turnsSent ? 'Напишіть наступне питання' : 'Напишіть ваше питання');
-  }
-
-  // ------------------------------------------------------------------ мікрофон і визначення фрази
-  function pickMime() {
-    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
-    var list = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'];
-    for (var i = 0; i < list.length; i++) { try { if (MediaRecorder.isTypeSupported(list[i])) return list[i]; } catch (e) {} }
-    return '';
-  }
-  function baseMime(m) { return String(m || '').split(';')[0].trim(); }
-
-  function micSupportProblem() {
-    if (!window.isSecureContext) return 'insecure';
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder || !AC) return 'unsupported';
-    return '';
-  }
-
-  function errKind(err) {
-    var n = err && err.name;
-    if (n === 'NotAllowedError' || n === 'SecurityError' || n === 'PermissionDeniedError') return 'denied';
-    if (n === 'NotFoundError' || n === 'OverconstrainedError' || n === 'DevicesNotFoundError') return 'nomic';
-    if (n === 'NotReadableError' || n === 'TrackStartError' || n === 'AbortError') return 'busy';
-    return 'other';
-  }
-
-  function setThresholds(v) {
-    v.noise = clamp(v.noise, 0.002, 0.05);
-    v.startThr = Math.max(0.018, v.noise * 3.2);
-    v.endThr = Math.max(0.011, v.noise * 2);
-  }
-
-  function setupMic(stream) {
-    S.micStream = stream;
-    S.micSource = AC.createMediaStreamSource(stream);
-    S.micAnalyser = AC.createAnalyser();
-    S.micAnalyser.fftSize = 1024;
-    S.micAnalyser.smoothingTimeConstant = 0;
-    S.micSource.connect(S.micAnalyser);
-    micBuf = new Float32Array(S.micAnalyser.fftSize);
-    S.micActive = true;
-    S.recMime = pickMime();
-    var v = S.vad;
-    v.calibrating = true; v.samples = []; v.inSpeech = false; v.aboveSince = 0; v.ending = false;
-    clearInterval(S.vadTimer);
-    S.vadTimer = setInterval(vadTick, 20);
-  }
-
-  function finishCalibration() {
-    var v = S.vad, s = v.samples;
-    if (s.length) {
-      var sum = 0;
-      for (var i = 0; i < s.length; i++) sum += s[i];
-      v.noise = sum / s.length;
-    }
-    v.calibrating = false; v.samples = [];
-    setThresholds(v);
-  }
-
-  function stopMic() {
-    clearInterval(S.vadTimer); S.vadTimer = 0;
-    discardRecorder();
-    if (S.micStream) S.micStream.getTracks().forEach(function (tr) { try { tr.stop(); } catch (e) {} });
-    if (S.micSource) { try { S.micSource.disconnect(); } catch (e) {} }
-    S.micStream = S.micSource = S.micAnalyser = null;
-    S.micActive = false; S.micRms = 0;
-  }
-
-  function startRecorder() {
-    if (!S.micStream) return false;
-    var r;
-    try {
-      r = S.recMime ? new MediaRecorder(S.micStream, { mimeType: S.recMime, audioBitsPerSecond: 32000 }) : new MediaRecorder(S.micStream);
-    } catch (e) {
-      try { r = new MediaRecorder(S.micStream); } catch (e2) { r = null; }
-    }
-    if (!r) return false;
-    var chunks = [];
-    r.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
-    r.__chunks = chunks;
-    try { r.start(); } catch (e) { return false; }
-    S.recorder = r;
-    S.recStartedAt = performance.now();
-    return true;
-  }
-
-  // запис не створюється: вимикаємо мікрофон і переходимо на текст, а не слухаємо вічно
-  function recorderFailed() {
-    var gen = S.gen;
-    stopMic();
-    updateControls();
-    onMicFail('unsupported', gen);
-  }
-
-  function discardRecorder() {
-    var r = S.recorder;
-    S.recorder = null;
-    if (!r) return;
-    r.ondataavailable = null; r.onstop = null;
-    try { if (r.state !== 'inactive') r.stop(); } catch (e) {}
-  }
-
-  function restartRecorder() { discardRecorder(); if (!startRecorder()) recorderFailed(); }
-
-  function stopRecorder() {
-    var r = S.recorder;
-    S.recorder = null;
-    if (!r) return Promise.resolve(null);
-    return new Promise(function (res) {
-      var done = false;
-      function fin() {
-        if (done) return;
-        done = true;
-        var ch = r.__chunks || [];
-        res(ch.length ? new Blob(ch, { type: r.mimeType || S.recMime || 'audio/webm' }) : null);
-      }
-      r.onstop = fin;
-      setTimeout(fin, 1500);
-      try { if (r.state !== 'inactive') r.stop(); else fin(); } catch (e) { fin(); }
-    });
-  }
-
-  function blobToB64(blob) {
-    return new Promise(function (res, rej) {
-      var fr = new FileReader();
-      fr.onload = function () { res(String(fr.result).split(',')[1] || ''); };
-      fr.onerror = function () { rej(fr.error); };
-      fr.readAsDataURL(blob);
-    });
-  }
-
-  function vadTick() {
-    if (!S.micAnalyser) return;
-    // контекст звуку не працює (iPhone після дзвінка чи перемикання програм): аналізатор мовчить,
-    // пробуємо відновити, а якщо не виходить, просимо торкнутися куба
-    if (AC && AC.state !== 'running') {
-      var nowD = Date.now();
-      if (!S.acStuckSince) S.acStuckSince = nowD;
-      if (nowD - S.lastResumeTry > 1000 && !document.hidden) resumeAudio();
-      if (nowD - S.acStuckSince > 1500 && S.state === 'listening') showAudioNotice();
-      return;
-    }
-    S.acStuckSince = 0;
-    var rms = rmsOf(S.micAnalyser, micBuf);
-    S.micRms = rms;
-    var v = S.vad, now = performance.now();
-    if (v.calibrating) { v.samples.push(rms); return; }
-    if (S.state !== 'listening' || !S.recorder || v.ending) { v.inSpeech = false; v.aboveSince = 0; return; }
-    if (!v.inSpeech) {
-      if (rms > v.startThr) {
-        if (!v.aboveSince) v.aboveSince = now;
-        v.belowSince = 0;
-        if (now - v.aboveSince >= 120) { v.inSpeech = true; v.speechStart = v.aboveSince; v.lastVoice = now; }
-      } else {
-        if (v.aboveSince) {
-          if (!v.belowSince) v.belowSince = now;
-          if (now - v.belowSince > 80) { v.aboveSince = 0; v.belowSince = 0; }
-        }
-        if (rms < v.noise) v.noise += (rms - v.noise) * 0.05;
-        else if (rms < v.noise * 1.8) v.noise += (rms - v.noise) * 0.01;
-        setThresholds(v);
-        // тиша перед фразою не довша за 2,5 с: запис перезапускається, поки людина мовчить
-        if (!v.aboveSince && now - S.recStartedAt > 2500) restartRecorder();
-      }
-    } else {
-      if (rms > v.endThr) v.lastVoice = now;
-      var dur = v.lastVoice - v.speechStart;
-      if (now - v.lastVoice >= 900) {
-        v.inSpeech = false; v.aboveSince = 0;
-        if (dur >= 400) endUtterance(); else restartRecorder();
-      } else if (now - v.speechStart >= 15000 || now - S.recStartedAt >= 16500) {
-        v.inSpeech = false; v.aboveSince = 0;
-        endUtterance();
-      }
-    }
-  }
-
-  function endUtterance() {
-    var gen = S.gen;
-    S.vad.ending = true;
-    var recP = stopRecorder();
-    setState('thinking');
-    setUserPending();
-    recP.then(function (blob) {
-      S.vad.ending = false;
-      if (gen !== S.gen) return;
-      if (!blob || blob.size < 600) { setCaption('user', '', false); settle(gen); return; }
-      return blobToB64(blob).then(function (b64) {
-        if (gen !== S.gen) return;
-        sendTurn({ audio_base64: b64, audio_mime: baseMime(blob.type || S.recMime) || 'audio/webm' });
-      });
-    }).catch(function () {
-      S.vad.ending = false;
-      if (gen === S.gen) handleTurnError('record', 'Не вдалося записати фразу. Спробуйте ще раз.');
-    });
-  }
-
-  function startListening() {
-    if (!S.sessionActive || S.limitDue) return;
-    if (S.fakeMic) {
-      S.listenSim = S.listenSim || makeListenSim();
-      setState('listening', 'Слухаю (рівень звуку імітується)');
-      return;
-    }
-    if (!S.micActive) return;
-    var v = S.vad;
-    v.inSpeech = false; v.aboveSince = 0; v.belowSince = 0; v.ending = false;
-    if (!S.recorder && !startRecorder()) { recorderFailed(); return; }
-    setState('listening');
-  }
-
-  // ------------------------------------------------------------------ розмова
-  // Привітання стає в загальну чергу мовлення першим, тож відповідь ніколи його не перебиває
-  // і не звучить раніше. readyP: чекати, поки мікрофон налаштується (або не вдасться).
-  function queueGreeting(greetP, readyP, gen) {
-    var ep = S.epoch;
-    S.greetPending = true;
-    S.chain = S.chain.then(function () { return Promise.all([greetP, readyP]); }).then(function (r) {
-      if (gen !== S.gen) return;
-      var p = r[0];
-      if (ep !== S.epoch) { setCaption('bot', p.text, false); return; }
-      return speak({ text: p.text, buffer: p.buffer, greeting: true });
-    }).catch(function () {}).then(function () {
-      if (gen !== S.gen) return;
-      S.greetPending = false;
-      settle(gen);
-    });
-  }
-
-  // Старт голосом. У вже відкритій текстовій розмові вмикає мікрофон без нової сесії і без привітання.
-  function startVoice() {
-    ensureAudio();
-    stopDemo();
-    var fresh = false;
-    if (!S.sessionActive) { newSession(); fresh = true; }
-    hideNotice();
-    var gen = S.gen;
-    var micReady = null, micDone = function () {};
-    if (fresh) {
-      pushHistory('assistant', PHRASES.greeting);
-      micReady = new Promise(function (res) { micDone = res; setTimeout(res, 8000); });
-      queueGreeting(getPhrase('greeting'), micReady, gen);
-    }
-    var problem = micSupportProblem();
-    if (problem) { micDone(); onMicFail(problem, gen); return; }
-    S.connecting = true;
-    setAudioSession('auto');
-    setState('idle', 'Підключаю мікрофон');
-    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(function (stream) {
-      if (gen !== S.gen || !S.sessionActive) { stream.getTracks().forEach(function (tr) { tr.stop(); }); micDone(); return; }
-      S.connecting = false;
-      resumeAudio();
-      try { setupMic(stream); } catch (e) {
-        stream.getTracks().forEach(function (tr) { tr.stop(); });
-        stopMic();
-        micDone();
-        onMicFail('unsupported', gen);
-        return;
-      }
-      if (!S.speech && S.pending === 0) setState('idle', 'Налаштовую звук');
-      else updateControls();
-      wait(520).then(function () {
-        finishCalibration();
-        micDone();
-        settle(gen);
-      });
-    }, function (err) {
-      micDone();
-      if (gen !== S.gen || !S.sessionActive) return;
-      S.connecting = false;
-      onMicFail(errKind(err), gen);
-    });
-  }
-
-  function onMicFail(kind, gen) {
-    S.connecting = false;
-    DBG.lastError = 'mic: ' + kind;
-    showNotice(MIC_MSG[kind] || MIC_MSG.other);
-    openText(true);
-    if (CFG.demo) S.fakeMic = true;
-    if (gen === S.gen && S.sessionActive && !S.speech && S.pending === 0 && S.state !== 'error') {
-      setState('idle', S.turnsSent ? 'Напишіть наступне питання' : 'Напишіть ваше питання');
-    } else updateControls();
-    settle(gen);
-  }
-
-  function isBusy() { return S.pending > 0 || S.vad.ending || !!S.limitDue; }
-
-  function sendText(raw) {
-    var text = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 500);
-    if (!text) return false;
-    // голосова фраза ще дописується або відповідь ще не прийшла: друга паралельна репліка не потрібна
-    if (isBusy()) return false;
-    ensureAudio();
-    stopDemo();
-    var fresh = false;
-    if (!S.sessionActive) { newSession(); fresh = true; pushHistory('assistant', PHRASES.greeting); }
-    hideNotice();
-    if (!fresh && S.speech) interrupt();
-    if (S.recorder) discardRecorder();
-    setCaption('user', text, false);
-    // привітання вантажиться паралельно із запитом і звучить першим, відповідь стає в чергу за ним
-    if (fresh) queueGreeting(getPhrase('greeting'), null, S.gen);
-    sendTurn({ text: text });
-    return true;
-  }
-
-  function sendTurn(extra) {
-    if (!S.sessionActive) return;
-    var body = {
-      session_id: S.sessionId,
-      page: location.href,
-      history: S.history.slice(-12).map(function (h) { return { role: h.role, text: h.text.slice(0, 600) }; }),
-      // звук, який не буде зіграно, не озвучуємо (і не платимо за нього)
-      no_audio: !AC || (S.audioBlocked && AC.state !== 'running')
-    };
-    if (extra.text) body.text = extra.text;
-    else { body.audio_base64 = extra.audio_base64; body.audio_mime = extra.audio_mime; }
-    S.pending++;
-    S.turnsSent++;
-    DBG.turns = S.turnsSent;
-    if (!S.speech) setState('thinking');
-    else updateControls();
-    var gen = S.gen, t0 = performance.now();
-    var ctl = window.AbortController ? new AbortController() : null;
-    if (ctl) S.turnCtls.push(ctl);
-    function dropCtl() { var i = S.turnCtls.indexOf(ctl); if (i >= 0) S.turnCtls.splice(i, 1); }
-    postJSON('/ba-pomichnyk-turn', body, TURN_TIMEOUT_MS, ctl).then(function (res) {
-      dropCtl();
-      if (gen !== S.gen) return;
-      S.pending = Math.max(0, S.pending - 1);
-      updateControls();
-      DBG.lastTiming = { client_ms: Math.round(performance.now() - t0), server: (res && res.timing_ms) || null };
-      handleTurn(res, extra, gen);
-    }, function (err) {
-      dropCtl();
-      if (gen !== S.gen) return;
-      S.pending = Math.max(0, S.pending - 1);
-      updateControls();
-      var name = err && err.name;
-      DBG.lastHttp = err && err.message;
-      if (name === 'TimeoutError') handleTurnError('timeout', 'Сервер не відповів вчасно. Спробуйте ще раз.');
-      else if (name === 'HttpError') handleTurnError(err.message, 'Помічник тимчасово недоступний. Спробуйте, будь ласка, пізніше.');
-      else handleTurnError('network', 'Немає зв\'язку з сервером. Перевірте інтернет і спробуйте ще раз.');
-    });
-  }
-
-  function handleTurn(res, extra, gen) {
-    if (!res || typeof res !== 'object') { handleTurnError('bad_response', 'Сервер відповів незрозуміло. Спробуйте ще раз.'); return; }
-    if (res.ok) {
-      syncTimer(res.remaining_sec);
-      var userText = res.user_text || extra.text || '';
-      if (userText) { pushHistory('user', userText); setCaption('user', userText, false); }
-      if (res.ended) { onLimit(res.reply_text || null); return; }
-      var reply = String(res.reply_text || '');
-      pushHistory('assistant', reply);
-      if (res.audio_base64 && AC) {
-        var buf;
-        try { buf = b64ToArrayBuffer(res.audio_base64); } catch (e) { buf = null; }
-        (buf ? decodeAudio(buf) : Promise.reject(new Error('bad_base64'))).then(function (ab) {
-          if (gen !== S.gen) return;
-          return enqueueSpeak({ text: reply, buffer: ab });
-        }, function (e) {
-          if (gen !== S.gen) return;
-          DBG.lastError = 'decode: ' + ((e && e.message) || 'failed');
-          return enqueueSpeak({ text: reply, buffer: null });
-        }).then(function () { settle(gen); });
-      } else {
-        enqueueSpeak({ text: reply, buffer: null }).then(function () { settle(gen); });
-      }
-      return;
-    }
-    var code = res.error || 'upstream_error';
-    if (code === 'empty_speech') {
-      setCaption('user', '', false);
-      getPhrase('repeat').then(function (p) {
-        if (gen !== S.gen) return;
-        return enqueueSpeak({ text: p.text, buffer: p.buffer });
-      }).then(function () { settle(gen); });
-      return;
-    }
-    if (code === 'limit_session') { onLimit(null); return; }
-    if (code === 'limit_daily' || code === 'forbidden_origin') {
-      DBG.lastError = code;
-      var msg = res.message || (code === 'limit_daily' ? 'На сьогодні ліміт розмов вичерпано. Напишіть нам у Telegram або залиште заявку на сайті.' : 'Помічник недоступний на цьому сайті.');
-      endConversation(code === 'limit_daily' ? 'limit' : 'closed');
-      var g2 = S.gen;
-      // повний текст у рамці повідомлення, у рядку стану коротко, щоб не дублювати
-      var short = code === 'limit_daily' ? 'Ліміт розмов на сьогодні вичерпано' : 'Помічник тут недоступний';
-      getPhrase('error').then(function (p) {
-        if (g2 !== S.gen) return;
-        return speak({ text: p.text, buffer: p.buffer, visual: 'error', status: short });
-      }).then(function () { if (g2 === S.gen) setState('error', short); });
-      showNotice(msg);
-      return;
-    }
-    handleTurnError(code, res.message || 'Не вдалося отримати відповідь. Спробуйте ще раз.');
-  }
-
-  function handleTurnError(code, msg) {
-    DBG.lastError = code + (msg ? ': ' + msg : '');
-    if (S.recorder) discardRecorder();
-    if (UI.capUser && UI.capUser.classList.contains('pending')) setCaption('user', '', false);
-    var gen = S.gen, rc = S.retries;
-    function show() { if (gen === S.gen && rc === S.retries && S.sessionActive && !S.speech) setState('error', msg); }
-    // якщо ще звучить попередня фраза (наприклад привітання), стан помилки настає після неї
-    if (!S.speech) show();
-    var now = Date.now();
-    if (now - S.lastErrorPhraseAt > 30000) {
-      S.lastErrorPhraseAt = now;
-      getPhrase('error').then(function (p) {
-        if (gen !== S.gen || rc !== S.retries) return;
-        return enqueueSpeak({ text: p.text, buffer: p.buffer, visual: 'error', status: msg, quiet: true });
-      }).then(show, show);
-    } else {
-      S.chain = S.chain.then(show, show);
-    }
-  }
-
-  function retry() {
-    S.retries++;
-    S.epoch++;
-    finishSpeech('stopped');
-    hideNotice();
-    if (!S.sessionActive) { startVoice(); return; }
-    if (S.micActive || S.fakeMic) startListening();
-    else setState('idle', 'Напишіть питання ще раз');
-  }
+  window.addEventListener('pagehide', function () { if (S.sessionActive) stopCall(); });
 
   // ------------------------------------------------------------------ інтерфейс
   var ICON = {
@@ -1729,17 +1090,13 @@
           '<div class="notice" role="alert" hidden></div>' +
           chips +
           '<div class="ctrls">' +
-            '<button type="button" class="kbd" aria-label="Написати замість сказати" aria-pressed="false" aria-controls="av-tform">' + ICON.kbd + '</button>' +
+            '<span class="kbd-slot" aria-hidden="true"></span>' +
             '<button type="button" class="main" data-mode="start" aria-label="Почати розмову">' + ICON.mic + '</button>' +
             '<div class="timer off" role="timer" aria-label="Залишок часу розмови">' +
               '<svg viewBox="0 0 52 52" aria-hidden="true"><circle class="trk" cx="26" cy="26" r="23"/><circle class="prg" cx="26" cy="26" r="23" stroke-dasharray="' + RING_LEN.toFixed(2) + '" stroke-dashoffset="0"/></svg>' +
               '<span class="tlabel">5:00</span>' +
             '</div>' +
           '</div>' +
-          '<form class="tform" id="av-tform" hidden autocomplete="off">' +
-            '<input type="text" maxlength="500" enterkeyhint="send" placeholder="Напишіть питання..." aria-label="Ваше повідомлення помічнику">' +
-            '<button type="submit" class="send" aria-label="Надіслати повідомлення">' + ICON.send + '</button>' +
-          '</form>' +
           '<div class="foot">AI-помічник. Розмову записуємо. <a href="https://businessatlas.space/privacy" target="_blank" rel="noopener">Політика конфіденційності</a></div>' +
         '</section>' +
       '</div>';
@@ -1751,26 +1108,20 @@
     UI.cubeCanvas = q('.stage canvas'); UI.launchCanvas = q('.launcher canvas');
     UI.status = q('.stext'); UI.caps = q('.caps'); UI.scroll = q('.cap-scroll'); UI.hint = q('.hint');
     UI.capUser = q('.cap-user'); UI.capBot = q('.cap-bot'); UI.live = q('.live');
-    UI.notice = q('.notice'); UI.main = q('.main'); UI.kbd = q('.kbd');
+    UI.notice = q('.notice'); UI.main = q('.main');
     UI.timer = q('.timer'); UI.tlabel = q('.tlabel'); UI.prg = q('.prg');
-    UI.form = q('.tform'); UI.input = q('.tform input'); UI.send = q('.send');
     UI.close = q('.close'); UI.endb = q('.endb'); UI.chips = root.querySelectorAll('.chip');
 
     UI.launcher.addEventListener('click', function () { open(); });
     UI.close.addEventListener('click', function () { close(); });
     UI.endb.addEventListener('click', function () {
       if (!S.sessionActive) return;
-      endConversation('user_end');
+      stopCall();
       setState('ended');
       try { UI.main.focus({ preventScroll: true }); } catch (e) {}
     });
     UI.main.addEventListener('click', onMain);
     UI.cubeCanvas.addEventListener('click', onCubeTap);
-    UI.kbd.addEventListener('click', function () { ensureAudio(); openText(!S.textOpen); });
-    UI.form.addEventListener('submit', function (e) {
-      e.preventDefault();
-      if (sendText(UI.input.value)) { UI.input.value = ''; try { UI.input.focus({ preventScroll: true }); } catch (e2) {} }
-    });
     for (var c = 0; c < UI.chips.length; c++) {
       UI.chips[c].addEventListener('click', function (e) { demoChip(e.currentTarget.getAttribute('data-chip')); });
     }
@@ -1783,7 +1134,7 @@
     UI.scroll.addEventListener('scroll', updateFade, { passive: true });
     document.addEventListener('keydown', onKey);
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden) { startLoop(); if (AC && S.sessionActive) resumeAudio(); }
+      if (!document.hidden) startLoop();
     });
     // живий куб на кнопці-запуску тільки при наведенні чи фокусі, інакше нерухомий кадр
     var wake = function () { S.launchHover = true; startLoop(); };
@@ -1829,8 +1180,6 @@
     if (!S.open) return;
     var inWidget = document.activeElement === UI.host;
     if (e.key === 'Escape' || e.key === 'Esc') {
-      // Esc у полі з текстом спершу очищає поле
-      if (inWidget && UI.shadow.activeElement === UI.input && UI.input.value) { UI.input.value = ''; e.stopPropagation(); return; }
       // під час розмови Esc закриває панель тільки з фокусом у віджеті (або на весь екран)
       if (S.sessionActive && !inWidget && !isFullScreen()) return;
       e.stopPropagation();
@@ -1859,10 +1208,7 @@
 
   function setState(name, statusText) {
     if (STATES.indexOf(name) < 0) return;
-    if (name !== 'listening') {
-      if (S.recorder && !S.vad.ending) discardRecorder();
-      if (!S.fakeMic) S.listenSim = null;
-    }
+    if (name !== 'listening' && !S.demoRun) S.listenSim = null;
     S.state = name;
     DBG.state = name;
     if (UI.root) UI.root.setAttribute('data-state', name);
@@ -1873,11 +1219,7 @@
   function setStatus(text) { if (UI.status && UI.status.textContent !== text) UI.status.textContent = text; }
 
   function mainMode() {
-    if (!S.sessionActive) return 'start';
-    if (S.state === 'speaking') return 'interrupt';
-    if (S.state === 'error') return 'retry';
-    // текстова розмова без мікрофона: велика кнопка вмикає голос, а не завершує розмову
-    if (!S.micActive && !S.fakeMic && !S.connecting && !S.limitDue && S.state === 'idle') return 'mic';
+    if (!S.sessionActive) return S.state === 'error' ? 'retry' : 'start';
     return 'stop';
   }
 
@@ -1891,7 +1233,6 @@
       UI.main.setAttribute('aria-label', MAIN_MODE[m].label);
       UI.main.title = MAIN_MODE[m].label;
     }
-    if (UI.send) UI.send.disabled = isBusy();
     if (UI.endb) UI.endb.hidden = !S.sessionActive;
   }
 
@@ -1956,41 +1297,22 @@
   function showNotice(text) { S.audioNotice = false; if (UI.notice) { UI.notice.textContent = text; UI.notice.hidden = false; } }
   function hideNotice() { S.audioNotice = false; if (UI.notice) { UI.notice.hidden = true; UI.notice.textContent = ''; } }
 
-  function openText(on) {
-    S.textOpen = !!on;
-    if (!UI.form) return;
-    UI.form.hidden = !on;
-    UI.kbd.setAttribute('aria-pressed', on ? 'true' : 'false');
-    // на дуже низькому екрані панель прокручується: показуємо поле введення
-    if (on && UI.panel.scrollHeight > UI.panel.clientHeight + 1) UI.panel.scrollTop = UI.panel.scrollHeight;
-    if (on) { try { UI.input.focus({ preventScroll: true }); } catch (e) {} setTimeout(function () { try { if (S.textOpen) UI.input.focus({ preventScroll: true }); } catch (e) {} }, 40); }
-  }
-
   function onMain(e) {
-    ensureAudio();
     // подвійний клік чи дотик: друге натискання ігноруємо, бо після першого кнопка вже змінила сенс
-    // (почати -> завершити, перервати -> завершити)
     if (e && e.detail > 1) return;
     var now = performance.now();
     if (now - S.lastMainClickAt < 600) return;
     S.lastMainClickAt = now;
-    if (S.demoRun || (!S.sessionActive && S.speech && S.speech.sim)) stopDemo();
+    if (S.demoRun || S.speech) stopDemo();
     var m = mainMode();
-    // кнопка щойно змінила сенс під пальцем: не виконуємо нову дію випадково
     if (S.modeChangedAt && now - S.modeChangedAt < (m === 'start' ? 800 : 350)) return;
-    if (m === 'start' || m === 'mic') { startVoice(); return; }
-    if (m === 'interrupt') { interrupt(); return; }
-    if (m === 'retry') { retry(); return; }
-    // поки браузер питає дозвіл на мікрофон, «стоп» не спрацьовує (є кнопка «Завершити» вгорі)
-    if (S.connecting) return;
-    endConversation('user_end');
+    if (m === 'start' || m === 'retry') { startCall(); return; }
+    stopCall();
     setState('ended');
   }
 
-  // Дотик до куба тільки перебиває відповідь (як у специфікації), розмову він не починає
+  // Дотик до куба: тільки спалах, розмову не починає і не перебиває (перебивають голосом)
   function onCubeTap() {
-    ensureAudio();
-    if (S.state === 'speaking' && S.sessionActive) { interrupt(); return; }
     if (panelCube && !CFG.reduced && S.state !== 'thinking') panelCube.burst(0.35);
   }
 
@@ -2012,11 +1334,7 @@
   function close() {
     if (!UI.panel || !S.open) return;
     stopDemo();
-    if (S.sessionActive) endConversation('closed');
-    // скасовуємо і ланцюжки, що вже йшли після кінця розмови (фраза ліміту чи помилки),
-    // щоб вони не звучали за закритою панеллю, а панель відкривалась чистою
-    S.gen++; S.epoch++;
-    S.chain = Promise.resolve(); S.greetPending = false;
+    if (S.sessionActive) stopCall();
     finishSpeech('stopped');
     S.open = false;
     UI.panel.classList.remove('in');
@@ -2044,13 +1362,13 @@
 
   function stopDemo() {
     S.demoRun = null;
-    if (S.speech && S.speech.sim) finishSpeech('stopped');
-    if (!S.fakeMic) S.listenSim = null;
+    if (S.speech) finishSpeech('stopped');
+    S.listenSim = null;
     markChip(null);
   }
 
   function demoChip(name) {
-    if (S.sessionActive) { endConversation('user_end'); }
+    if (S.sessionActive) stopCall();
     stopDemo();
     hideNotice();
     markChip(name);
@@ -2132,7 +1450,7 @@
   // ------------------------------------------------------------------ публічний API і запуск
   window.AtlasVoice = {
     __atlas: true,
-    version: '0.2.0',
+    version: '0.3.0-vapi',
     open: open,
     close: close,
     setState: function (name) {
