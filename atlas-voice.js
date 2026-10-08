@@ -769,7 +769,7 @@
     timerEnd: 0, timerId: 0,
     demoRun: null, level: 0, modeChangedAt: 0, lastMainClickAt: 0,
     launchAnimUntil: 0, launchRestUntil: 0, launchHover: false,
-    vapi: null, sdkP: null, callId: null
+    vapi: null, sdkP: null, callId: null, callGen: -1, endReason: ''
   };
   var DBG = window.__atlasVoiceDebug = {
     state: 'idle', level: 0, lastError: null, callId: null, assistant: CFG.assistant, demo: CFG.demo
@@ -890,7 +890,7 @@
   function tickTimer() {
     var left = Math.max(0, Math.ceil((S.timerEnd - Date.now()) / 1000));
     renderTimer(left, true);
-    if (S.sessionActive && Date.now() - S.timerEnd > 10000) stopCall();
+    if (S.sessionActive && Date.now() - S.timerEnd > 10000) { stopCall(); setState('ended'); }
   }
 
   // ------------------------------------------------------------------ Vapi
@@ -919,32 +919,37 @@
     return S.sdkP;
   }
 
+  // Події SDK належать дзвінку, який стартував останнім (S.callGen); події зупиненого раніше дзвінка ігноруються
+  function mine() { return S.callGen === S.gen; }
+
   function bindVapi(v) {
     v.on('call-start', function () {
+      if (!mine()) return;
       S.connecting = false;
       if (!S.sessionActive) return;
       hideNotice();
       setState('listening');
     });
     v.on('call-end', function () {
+      if (!mine()) return;
       var was = S.sessionActive;
       endConversation();
-      if (was && S.state !== 'error') setState('ended');
+      if (was && S.state !== 'error') setState(/error|fail/i.test(S.endReason) ? 'error' : 'ended');
     });
     v.on('speech-start', function () {
-      if (!S.sessionActive) return;
+      if (!mine() || !S.sessionActive) return;
       S.botSpeaking = true;
       setState('speaking');
     });
     v.on('speech-end', function () {
-      if (!S.sessionActive) return;
+      if (!mine() || !S.sessionActive) return;
       S.botSpeaking = false; S.botLevel = 0;
       setState('listening');
     });
     v.on('volume-level', function (x) { S.botLevel = +x || 0; });
     v.on('local-volume-level', function (x) { S.micLevel = +x || 0; });
     v.on('message', function (m) {
-      if (!m || !S.sessionActive) return;
+      if (!m || !mine() || !S.sessionActive) return;
       if (m.type === 'transcript' && m.transcript) {
         var who = m.role === 'user' ? 'user' : 'bot';
         var fin = m.transcriptType === 'final';
@@ -958,14 +963,40 @@
         if (fin) announce(who, m.transcript);
       } else if (m.type === 'speech-update' && m.role === 'assistant' && m.status === 'started') {
         S.botFinal = '';
+      } else if (m.type === 'status-update' && m.status === 'ended') {
+        S.endReason = String(m.endedReason || '');
       }
     });
+    // SDK шле в error і нефатальні збої обробки звуку; після них дзвінок триває, тож їх тільки записуємо
+    var SOFT = /^(audio-processing-setup|audio-processor-recovery|audio-observer-setup|video-recording-setup)(-error)?$/;
     v.on('error', function (e) {
-      var msg = (e && (e.errorMsg || e.message || (e.error && e.error.message))) || 'unknown';
+      var msg = (e && (e.errorMsg || e.message || (e.error && e.error.message))) || (e && e.type) || 'unknown';
       DBG.lastError = 'vapi: ' + (typeof msg === 'string' ? msg : JSON.stringify(msg));
-      var was = S.sessionActive;
-      endConversation();
-      if (was || S.connecting) failState(e);
+      if (e && SOFT.test(String(e.type || ''))) return;
+      if (!mine()) return;
+      var was = S.sessionActive || S.connecting;
+      // Коли дзвінок завершує сам агент (endCall, тиша, ліміт 5 хв), Daily шле помилку ejected «Meeting has ended»: це звичайний кінець
+      var raw = '';
+      try { raw = JSON.stringify(e || {}); } catch (x) { raw = String(e); }
+      if (e && e.type === 'daily-error' && /ejected|Meeting has ended/i.test(raw)) {
+        stopCall();
+        if (was) setState(/error|fail/i.test(S.endReason) ? 'error' : 'ended');
+        return;
+      }
+      stopCall();
+      if (was) failState(e);
+    });
+    // Відмова чи відсутність мікрофона приходить окремою подією, дзвінок при цьому вже створено: зупиняємо його
+    v.on('camera-error', function (e) {
+      var raw = '';
+      try { raw = JSON.stringify(e || {}); } catch (x) { raw = String(e); }
+      DBG.lastError = 'mic: ' + raw.slice(0, 200);
+      if (!mine()) return;
+      var was = S.sessionActive || S.connecting;
+      stopCall();
+      if (!was) return;
+      showNotice(/not-found|NotFound|no.*device/i.test(raw) ? MIC_MSG.nomic : MIC_MSG.denied);
+      setState('error');
     });
   }
 
@@ -984,6 +1015,13 @@
     return '';
   }
 
+  // Перевірка мікрофона до платного дзвінка: якщо доступу немає, дзвінок у Vapi навіть не створюється
+  function checkMic() {
+    return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+      s.getTracks().forEach(function (tr) { try { tr.stop(); } catch (e) {} });
+    });
+  }
+
   function startCall() {
     stopDemo();
     hideNotice();
@@ -992,21 +1030,31 @@
     if (problem) { showNotice(MIC_MSG[problem]); setState('error'); return; }
     S.gen++;
     var gen = S.gen;
-    S.sessionActive = true; S.connecting = true; S.botSpeaking = false; S.botLevel = 0; S.micLevel = 0; S.botFinal = '';
+    S.sessionActive = true; S.connecting = true; S.botSpeaking = false; S.botLevel = 0; S.micLevel = 0; S.botFinal = ''; S.endReason = '';
     clearCaptions();
     startTimer(SESSION_SEC);
     setState('thinking', 'З\'єдную');
-    getVapi().then(function (v) {
-      if (gen !== S.gen || !S.sessionActive) return;
-      // Веб-дзвінок: переведення на телефон не робимо (ТЗ, режим C)
-      return v.start(CFG.assistant, { variableValues: { transfer_allowed: 'ні' } }).then(function (call) {
-        if (call && call.id) { S.callId = call.id; DBG.callId = call.id; }
-        if (gen !== S.gen) { try { v.stop(); } catch (e) {} }
+    var alive = function () { return gen === S.gen && S.sessionActive; };
+    // Старти йдуть по черзі: новий start чекає, поки попередній завершиться або зупиниться
+    S.startP = (S.startP || Promise.resolve()).catch(function () {}).then(function () {
+      if (!alive()) return;
+      return checkMic().then(function () {
+        if (!alive()) return;
+        return getVapi().then(function (v) {
+          if (!alive()) return;
+          // Веб-дзвінок: переведення на телефон не робимо (ТЗ, режим C)
+          S.callGen = gen;
+          return v.start(CFG.assistant, { variableValues: { transfer_allowed: 'ні' } }).then(function (call) {
+            if (!alive()) { if (call) { try { var p = v.stop(); if (p && p.catch) p.catch(function () {}); return p; } catch (e) {} } return; }
+            if (!call) { DBG.lastError = 'start: null'; stopCall(); failState(null); return; }
+            S.callId = call.id; DBG.callId = call.id;
+          });
+        });
       });
     }).catch(function (e) {
       if (gen !== S.gen) return;
-      DBG.lastError = 'start: ' + ((e && (e.errorMsg || e.message)) || 'failed');
-      endConversation();
+      DBG.lastError = 'start: ' + ((e && (e.errorMsg || e.message || e.name)) || 'failed');
+      stopCall();
       failState(e);
     });
   }
@@ -1014,7 +1062,7 @@
   function stopCall() {
     var v = S.vapi;
     endConversation();
-    if (v) { try { v.stop(); } catch (e) {} }
+    if (v) { try { var p = v.stop(); if (p && p.catch) p.catch(function () {}); } catch (e) {} }
   }
 
   function endConversation() {
@@ -1026,7 +1074,11 @@
     updateControls();
   }
 
-  window.addEventListener('pagehide', function () { if (S.sessionActive) stopCall(); });
+  // Закриття сторінки зупиняє дзвінок завжди (і той, що ще з'єднується); після повернення з кешу браузера панель чиста
+  window.addEventListener('pagehide', function () { stopCall(); });
+  window.addEventListener('pageshow', function (e) {
+    if (e && e.persisted && !S.sessionActive && S.state !== 'idle') { setState('idle'); clearCaptions(); hideNotice(); renderTimer(SESSION_SEC, false); }
+  });
 
   // ------------------------------------------------------------------ інтерфейс
   var ICON = {
@@ -1334,7 +1386,8 @@
   function close() {
     if (!UI.panel || !S.open) return;
     stopDemo();
-    if (S.sessionActive) stopCall();
+    // закриття панелі зупиняє і дзвінок, і старт, що ще йде
+    stopCall();
     finishSpeech('stopped');
     S.open = false;
     UI.panel.classList.remove('in');
