@@ -3,7 +3,7 @@
  * Куб і інтерфейс з прототипу 18.09.2026; розмова через Vapi Web SDK з публічним ключем.
  * Підключення:
  *   <script src="atlas-voice.js" data-public-key="..." data-assistant="..." defer></script>
- * Атрибути: data-public-key, data-assistant, data-position="right|left", data-demo="true|false".
+ * Атрибути: data-public-key, data-assistant, data-position="right|left", data-demo="true|false", data-site-hook (вебхук n8n: старт дзвінка і email).
  * Параметр сторінки ?demo=1: режим показу станів куба без дзвінка.
  */
 (function () {
@@ -32,6 +32,7 @@
     assistant: ds.assistant || '',
     position: ds.position === 'left' ? 'left' : 'right',
     demo: ds.demo === 'true' || qs.get('demo') === '1',
+    siteHook: ds.siteHook || 'https://n8n.businessautomation.space/webhook/ba-atlas-site',
     reduced: false
   };
   var mqReduce = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -166,6 +167,9 @@
 
     '.ctrls{flex:0 0 auto;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:10px 26px 4px}',
     '.kbd-slot{justify-self:start;width:48px;height:48px}',
+    '.enote{flex:0 0 auto;margin:6px 16px 0;font-size:12.5px;line-height:1.45;color:#C9C3E8;text-align:center}',
+    '.enote.warn{color:#FDE2D6}',
+    '.enote[hidden]{display:none}',
     '.kbd{justify-self:start;width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--t2);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);transition:background .2s,color .2s,border-color .2s}',
     '.kbd:hover{color:var(--t1);background:rgba(255,255,255,.08)}',
     '.kbd[aria-pressed=true]{color:#fff;background:rgba(124,58,237,.28);border-color:rgba(167,139,250,.6)}',
@@ -769,7 +773,7 @@
     timerEnd: 0, timerId: 0,
     demoRun: null, level: 0, modeChangedAt: 0, lastMainClickAt: 0,
     launchAnimUntil: 0, launchRestUntil: 0, launchHover: false,
-    vapi: null, sdkP: null, callId: null, callGen: -1, endReason: ''
+    vapi: null, sdkP: null, callId: null, controlUrl: '', callGen: -1, endReason: '', byeTimer: 0, byeSaid: false
   };
   var DBG = window.__atlasVoiceDebug = {
     state: 'idle', level: 0, lastError: null, callId: null, assistant: CFG.assistant, demo: CFG.demo
@@ -928,6 +932,7 @@
       S.connecting = false;
       if (!S.sessionActive) return;
       hideNotice();
+      showEmailForm(true);
       setState('listening');
     });
     v.on('call-end', function () {
@@ -953,6 +958,14 @@
       if (m.type === 'transcript' && m.transcript) {
         var who = m.role === 'user' ? 'user' : 'bot';
         var fin = m.transcriptType === 'final';
+        // Страховка завершення: прощання бота її вмикає; ввічлива відповідь клієнта лише відсуває відлік,
+        // а змістовна репліка клієнта, питання бота чи вихід з ролі її вимикають
+        var said = String(m.transcript);
+        if (who === 'bot' && /\?|Повертаюсь|Уявімо/i.test(said)) S.byeSaid = false;
+        else if (who === 'bot' && fin && isGoodbye(said)) S.byeSaid = true;
+        else if (who === 'user' && fin && !isGoodbye(said) && !COURTESY_RE.test(said)) S.byeSaid = false;
+        if (S.byeTimer) { clearTimeout(S.byeTimer); S.byeTimer = 0; }
+        if (S.byeSaid) armGoodbye();
         if (who === 'user') {
           setCaption('user', m.transcript, false);
           if (!fin) UI.capUser.classList.add('pending');
@@ -1030,7 +1043,7 @@
     if (problem) { showNotice(MIC_MSG[problem]); setState('error'); return; }
     S.gen++;
     var gen = S.gen;
-    S.sessionActive = true; S.connecting = true; S.botSpeaking = false; S.botLevel = 0; S.micLevel = 0; S.botFinal = ''; S.endReason = '';
+    S.sessionActive = true; S.connecting = true; S.botSpeaking = false; S.botLevel = 0; S.micLevel = 0; S.botFinal = ''; S.endReason = ''; S.byeSaid = false;
     clearCaptions();
     startTimer(SESSION_SEC);
     setState('thinking', 'З\'єдную');
@@ -1048,6 +1061,8 @@
             if (!alive()) { if (call) { try { var p = v.stop(); if (p && p.catch) p.catch(function () {}); return p; } catch (e) {} } return; }
             if (!call) { DBG.lastError = 'start: null'; stopCall(); failState(null); return; }
             S.callId = call.id; DBG.callId = call.id;
+            S.controlUrl = (call.monitor && call.monitor.controlUrl) || ''; DBG.control = !!S.controlUrl;
+            siteStart();
           });
         });
       });
@@ -1057,6 +1072,27 @@
       stopCall();
       failState(e);
     });
+  }
+
+  // Страховка завершення: GPT Live інколи прощається, але не передає завершення бекенду, і дзвінок висить.
+  // Якщо коротка репліка агента є прощанням (не вихід з ролі демо-сцени) і 4,5 с ніхто нічого не сказав, кладемо слухавку.
+  var BYE_RE = /(до побачення|до зустрічі|всього (доброго|найкращого)|(гарного|хорошого|чудового|приємного)( вам)? (дня|вечора)|гарних вихідних|до зв['\u02bc\u2019]язку|на все добре|бувайте|бувай|goodbye|bye|have a (nice|good|great) (day|evening))/i;
+  var COURTESY_RE = /^[\s.,!]*((дякую|спасибі|і вам|вам|теж|взаємно|добре|ага|угу|так|ок|окей|thanks|thank you|you too)[\s.,!]*)+$/i;
+  function isGoodbye(text) {
+    var s = String(text || '');
+    if (!BYE_RE.test(s)) return false;
+    if (/Повертаюсь|Business Atlas|Уявімо/i.test(s)) return false;
+    return s.split(/\s+/).length <= 12;
+  }
+  function armGoodbye() {
+    var gen = S.gen;
+    S.byeTimer = setTimeout(function () {
+      S.byeTimer = 0;
+      if (gen !== S.gen || !S.sessionActive) return;
+      if (S.botSpeaking) { armGoodbye(); return; }
+      stopCall();
+      setState('ended');
+    }, 4500);
   }
 
   function stopCall() {
@@ -1069,9 +1105,55 @@
     if (!S.sessionActive) return;
     S.sessionActive = false; S.connecting = false; S.botSpeaking = false; S.botLevel = 0; S.micLevel = 0;
     S.gen++;
+    if (S.byeTimer) { clearTimeout(S.byeTimer); S.byeTimer = 0; }
+    S.byeSaid = false;
     stopTimer();
     renderTimer(Math.max(0, Math.ceil((S.timerEnd - Date.now()) / 1000)), false);
+    showEmailForm(false);
+    S.controlUrl = '';
     updateControls();
+  }
+
+  // ------------------------------------------------------------------ сайт і n8n
+  // Vapi не повідомляє сервер про старт веб-дзвінка GPT Live, тому віджет сам кличе n8n:
+  // старт (прогрів пошуку, підказка 4-ї хвилини) і email, який клієнт написав у полі під кубом.
+  function sitePost(body) {
+    if (!CFG.siteHook || !window.fetch) return Promise.reject(new Error('no hook'));
+    return fetch(CFG.siteHook, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+  function siteStart() {
+    if (!S.callId || !S.controlUrl) return;
+    sitePost({ action: 'start', callId: S.callId, controlUrl: S.controlUrl }).catch(function (e) { DBG.lastError = 'site start: ' + (e && e.message); });
+  }
+  function emailNote(text, warn) {
+    if (!UI.enote) return;
+    UI.enote.textContent = text; UI.enote.hidden = !text;
+    UI.enote.classList.toggle('warn', !!warn);
+  }
+  function showEmailForm(on) {
+    if (!UI.eform) return;
+    UI.eform.hidden = !on;
+    if (on) emailNote('Напишіть email тут або продиктуйте номер голосом', false);
+    else { UI.einput.value = ''; UI.einput.disabled = false; UI.esend.disabled = false; emailNote('', false); }
+  }
+  var EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+  function sendEmail(value) {
+    var email = String(value || '').trim();
+    if (email.length > 120 || !EMAIL_RE.test(email)) { emailNote('Перевірте email: схоже, в ньому помилка.', true); return; }
+    if (!S.sessionActive || !S.callId || !S.controlUrl) { emailNote('Email можна надіслати під час розмови.', true); return; }
+    var gen = S.gen;
+    UI.esend.disabled = true; UI.einput.disabled = true;
+    sitePost({ action: 'email', callId: S.callId, controlUrl: S.controlUrl, email: email }).then(function (r) {
+      if (gen !== S.gen) return;
+      if (!r || !r.ok) throw new Error('http ' + (r && r.status));
+      UI.einput.value = ''; UI.einput.disabled = false; UI.esend.disabled = false;
+      emailNote('Email надіслано: ' + email + '. Якщо є помилка, напишіть ще раз.', false);
+    }).catch(function (e) {
+      if (gen !== S.gen) return;
+      DBG.lastError = 'email: ' + (e && e.message);
+      UI.esend.disabled = false; UI.einput.disabled = false;
+      emailNote('Не вдалося надіслати email. Спробуйте ще раз або продиктуйте номер голосом.', true);
+    });
   }
 
   // Закриття сторінки зупиняє дзвінок завжди (і той, що ще з'єднується); після повернення з кешу браузера панель чиста
@@ -1149,6 +1231,11 @@
               '<span class="tlabel">5:00</span>' +
             '</div>' +
           '</div>' +
+          '<form class="tform eform" hidden autocomplete="on" novalidate>' +
+            '<input type="email" name="email" autocomplete="email" inputmode="email" maxlength="120" enterkeyhint="send" placeholder="Ваш email для Олега" aria-label="Ваш email для Олега">' +
+            '<button type="submit" class="send" aria-label="Надіслати email">' + ICON.send + '</button>' +
+          '</form>' +
+          '<div class="enote" role="status" hidden></div>' +
           '<div class="foot">AI-помічник. Розмову записуємо. <a href="https://businessatlas.space/privacy" target="_blank" rel="noopener">Політика конфіденційності</a></div>' +
         '</section>' +
       '</div>';
@@ -1162,6 +1249,7 @@
     UI.capUser = q('.cap-user'); UI.capBot = q('.cap-bot'); UI.live = q('.live');
     UI.notice = q('.notice'); UI.main = q('.main');
     UI.timer = q('.timer'); UI.tlabel = q('.tlabel'); UI.prg = q('.prg');
+    UI.eform = q('.eform'); UI.einput = q('.eform input'); UI.esend = q('.eform .send'); UI.enote = q('.enote');
     UI.close = q('.close'); UI.endb = q('.endb'); UI.chips = root.querySelectorAll('.chip');
 
     UI.launcher.addEventListener('click', function () { open(); });
@@ -1174,6 +1262,7 @@
     });
     UI.main.addEventListener('click', onMain);
     UI.cubeCanvas.addEventListener('click', onCubeTap);
+    UI.eform.addEventListener('submit', function (e) { e.preventDefault(); sendEmail(UI.einput.value); });
     for (var c = 0; c < UI.chips.length; c++) {
       UI.chips[c].addEventListener('click', function (e) { demoChip(e.currentTarget.getAttribute('data-chip')); });
     }
@@ -1232,6 +1321,8 @@
     if (!S.open) return;
     var inWidget = document.activeElement === UI.host;
     if (e.key === 'Escape' || e.key === 'Esc') {
+      // Esc у полі email з текстом спершу очищає поле, а не кладе слухавку
+      if (inWidget && UI.shadow.activeElement === UI.einput && UI.einput.value) { UI.einput.value = ''; e.stopPropagation(); return; }
       // під час розмови Esc закриває панель тільки з фокусом у віджеті (або на весь екран)
       if (S.sessionActive && !inWidget && !isFullScreen()) return;
       e.stopPropagation();
