@@ -45,7 +45,7 @@
 
   var DEMO_Q = 'Чим ви займаєтесь?';
   var DEMO_A = 'Ми Бізнес Атлас: будуємо AI-агентів, автоматизацію процесів і CRM, щоб бізнес ріс без розширення команди. А я сам приклад голосового агента, якого ми робимо для клієнтів.';
-  var DEMO_LISTEN = 'Скажіть, будь ласка, скільки коштує голосовий агент для клініки?';
+  var DEMO_LISTEN = 'Хочу голосового агента для клініки, з чого почати?';
 
   var STATES = ['idle', 'listening', 'thinking', 'speaking', 'error', 'ended'];
   var STATUS = {
@@ -933,6 +933,7 @@
       if (!S.sessionActive) return;
       hideNotice();
       showEmailForm(true);
+      startTimer(SESSION_SEC);
       setState('listening');
     });
     v.on('call-end', function () {
@@ -971,6 +972,7 @@
           if (!fin) UI.capUser.classList.add('pending');
         } else {
           if (fin) S.botFinal = (S.botFinal ? S.botFinal + ' ' : '') + m.transcript;
+          if (fin) S.lastBotEn = /[a-z]/i.test(m.transcript) && !/[а-яіїєґ]/i.test(m.transcript);
           setCaption('bot', fin ? S.botFinal : ((S.botFinal ? S.botFinal + ' ' : '') + m.transcript), !fin);
         }
         if (fin) announce(who, m.transcript);
@@ -1076,7 +1078,7 @@
 
   // Страховка завершення: GPT Live інколи прощається, але не передає завершення бекенду, і дзвінок висить.
   // Якщо коротка репліка агента є прощанням (не вихід з ролі демо-сцени) і 4,5 с ніхто нічого не сказав, кладемо слухавку.
-  var BYE_RE = /(до побачення|до зустрічі|всього (доброго|найкращого)|(гарного|хорошого|чудового|приємного)( вам)? (дня|вечора)|гарних вихідних|до зв['\u02bc\u2019]язку|на все добре|бувайте|бувай|goodbye|bye|have a (nice|good|great) (day|evening))/i;
+  var BYE_RE = /(Дякую за розмову, гарного дня|Thank you for your time, have a great day|Схоже, зв.?язок перервався|Дякую за дзвінок, гарного дня|Thank you for calling, have a great day|Час демо добігає кінця|Our demo time is up)/i;
   var COURTESY_RE = /^[\s.,!]*((дякую|спасибі|і вам|вам|теж|взаємно|добре|ага|угу|так|ок|окей|thanks|thank you|you too)[\s.,!]*)+$/i;
   function isGoodbye(text) {
     var s = String(text || '');
@@ -1107,7 +1109,8 @@
     S.gen++;
     if (S.byeTimer) { clearTimeout(S.byeTimer); S.byeTimer = 0; }
     S.byeSaid = false;
-    if (S.nudgeTimer) { clearTimeout(S.nudgeTimer); S.nudgeTimer = 0; }
+    [S.nudgeTimer, S.nudge2Timer, S.limitTimer].forEach(function (t) { if (t) clearTimeout(t); }); S.nudgeTimer = S.nudge2Timer = S.limitTimer = 0;
+    S.callId = null; S.lastEmail = ''; S.lastEmailAt = 0; S.lastBotEn = false;
     stopTimer();
     renderTimer(Math.max(0, Math.ceil((S.timerEnd - Date.now()) / 1000)), false);
     showEmailForm(false);
@@ -1132,14 +1135,19 @@
     try { S.vapi.send({ type: 'add-message', message: { role: 'system', content: text }, triggerResponseEnabled: !!trigger }); return true; }
     catch (e) { DBG.lastError = 'send: ' + (e && e.message); return false; }
   }
-  var NUDGE_TEXT = 'Минуло три хвилини з п’яти, до кінця демо лишилось близько двох. Наступною своєю реплікою, не перебиваючи клієнта, підводь до запису на дзвінок з Олегом: якщо граєш сцену, вийди з ролі за блоком «Демо-сцена»; якщо біль уже названо, а пропозиції ще не було, зроби її; якщо клієнт погодився, а часу ще не обрано, виклич check_availability; якщо час обрано, а контакту ще немає, попроси email у полі під кубом або номер. Якщо вже записано чи передано, клієнт відмовився або зараз диктує номер чи друкує email, нічого не міняй.';
+  var NUDGE_TEXT = 'Минуло три хвилини з п’яти, до кінця демо лишилось близько двох. Наступною своєю реплікою, не перебиваючи клієнта, підводь до запису на дзвінок з Олегом: якщо граєш сцену, вийди з ролі за блоком «Демо-сцена»; якщо біль уже названо, а пропозиції ще не було, зроби її; якщо клієнт погодився, а варіантів часу ще не звучало, виклич check_availability; якщо час обрано, а контакту ще немає, попроси email у полі під кубом або номер. Якщо вже записано чи передано, клієнт відмовився або зараз диктує номер чи друкує email, нічого не міняй.';
+  var NUDGE2_TEXT = 'Лишилось менше хвилини. Якщо запису чи передачі ще немає, наступною реплікою коротко попроси email у полі під кубом чи номер, щоб Олег звʼязався, і за згоди виклич request_callback. Якщо все зроблено або клієнт відмовився, нічого не міняй.';
+  // за кілька секунд до ліміту Vapi (300 с) прощаємось самі, щоб дзвінок не обривався посеред фрази
+  var BYE_LIMIT = { uk: 'Час демо добігає кінця. Дякую за розмову, гарного дня!', en: 'Our demo time is up. Thank you for your time, have a great day!' };
   function armNudge(gen) {
     if (S.nudgeTimer) clearTimeout(S.nudgeTimer);
-    S.nudgeTimer = setTimeout(function () {
-      S.nudgeTimer = 0;
-      if (gen !== S.gen || !S.sessionActive) return;
-      agentNote(NUDGE_TEXT, false);
-    }, 180000);
+    var at = function (ms, fn) { return setTimeout(function () { if (gen === S.gen && S.sessionActive) fn(); }, ms); };
+    S.nudgeTimer = at(180000, function () { agentNote(NUDGE_TEXT, false); });
+    S.nudge2Timer = at(255000, function () { agentNote(NUDGE2_TEXT, false); });
+    S.limitTimer = at(291000, function () {
+      try { if (S.vapi && typeof S.vapi.say === 'function') S.vapi.say(S.lastBotEn ? BYE_LIMIT.en : BYE_LIMIT.uk, true); }
+      catch (e) { DBG.lastError = 'say: ' + (e && e.message); }
+    });
   }
   function emailNote(text, warn) {
     if (!UI.enote) return;
@@ -1152,15 +1160,26 @@
     if (on) emailNote('Напишіть email тут або продиктуйте номер голосом', false);
     else { UI.einput.value = ''; UI.einput.disabled = false; UI.esend.disabled = false; emailNote('', false); }
   }
-  var EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+  var EMAIL_RE = /^[a-z0-9](?:[a-z0-9._%+-]*[a-z0-9_%+-])?@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
+  // мітку на початку не міняти: за нею n8n бере email з історії розмови
+  function emailText(email) {
+    return 'Клієнт написав свій email у полі під кубом: ' + email + '. Адресу вголос не читай. ' +
+      'Іде демо-сцена: лишайся в ролі, про email скажеш на виході з ролі. Інакше наступною реплікою коротко скажи, що бачиш email, і зроби одне: ' +
+      'дзвінок уже заброньовано: удруге не бронюй, а виклич request_callback з цим email; ' +
+      'час обрано й імʼя відоме: виклич book_meeting з цим email; час обрано, а імені немає: спитай, як звертатися; ' +
+      'варіанти часу вже прозвучали, а клієнт ще не обрав: спитай, який зручніший; згода є, а варіантів ще не було: виклич check_availability без інших питань; ' +
+      'згоди ще немає: продовжуй з того місця, де зупинились.';
+  }
   function sendEmail(value) {
-    var email = String(value || '').trim();
-    if (email.length > 120 || !EMAIL_RE.test(email)) { emailNote('Перевірте email: схоже, в ньому помилка.', true); return; }
+    var email = String(value || '').trim().toLowerCase().replace(/\s+/g, '').replace(/^mailto:/, '').replace(/[.,;:!?]+$/, '');
+    if (!email && Date.now() - (S.lastEmailAt || 0) < 5000) return;   // другий Enter одразу після надсилання
+    if (email.length > 120 || /\.\./.test(email) || !EMAIL_RE.test(email)) { emailNote('Перевірте email: схоже, в ньому помилка.', true); return; }
     if (!S.sessionActive || !S.callId) { emailNote('Email можна надіслати під час розмови.', true); return; }
-    var ok = agentNote('Клієнт написав свій email у полі під кубом: ' + email.toLowerCase() + '. Наступною реплікою коротко скажи, що бачиш email, адресу вголос не читай. Якщо клієнт уже обрав час дзвінка, забронюй його з цим email; якщо погодився, а часу ще не обрано, запропонуй час; якщо ні, продовжуй розмову з того місця, де зупинились.', true);
-    if (!ok) { emailNote('Не вдалося надіслати email. Спробуйте ще раз або продиктуйте номер голосом.', true); return; }
+    if (email === S.lastEmail) { UI.einput.value = ''; emailNote('Цей email уже надіслано.', false); return; }
+    if (!agentNote(emailText(email), true)) { emailNote('Не вдалося надіслати email. Спробуйте ще раз або продиктуйте номер голосом.', true); return; }
+    S.lastEmail = email; S.lastEmailAt = Date.now();
     UI.einput.value = '';
-    emailNote('Email надіслано: ' + email + '. Якщо є помилка, напишіть ще раз.', false);
+    emailNote('Email надіслано: ' + email + '. Якщо є помилка, напишіть правильний.', false);
   }
 
   // Закриття сторінки зупиняє дзвінок завжди (і той, що ще з'єднується); після повернення з кешу браузера панель чиста
@@ -1206,10 +1225,10 @@
     root.innerHTML =
       '<style>' + CSS + '</style>' +
       '<div class="root ' + CFG.position + '" data-state="idle">' +
-        '<button type="button" class="launcher" aria-label="Поговорити з помічником Бізнес Атлас" aria-haspopup="dialog" aria-expanded="false">' +
+        '<button type="button" class="launcher" aria-label="Поговорити з AI" aria-haspopup="dialog" aria-expanded="false">' +
           '<canvas aria-hidden="true"></canvas>' +
           '<span class="badge" aria-hidden="true">' + ICON.micSmall + '</span>' +
-          '<span class="tip" aria-hidden="true">Поговоріть з нами голосом</span>' +
+          '<span class="tip" aria-hidden="true">Поговорити з AI</span>' +
         '</button>' +
         '<section class="panel" role="dialog" aria-label="Голосовий помічник Бізнес Атлас" aria-hidden="true">' +
           '<div class="head">' +
@@ -1223,7 +1242,7 @@
           '<div class="caps">' +
             '<div class="cap-user" aria-hidden="true"></div>' +
             '<div class="cap-scroll">' +
-              '<p class="hint">Спитайте, чим ми займаємось, скільки коштує AI-агент або як записатися на безкоштовну консультацію.</p>' +
+              '<p class="hint">Спитайте, чим ми займаємось, або розкажіть про свій бізнес: помічник покаже на прикладі і запише на безкоштовну консультацію з Олегом.</p>' +
               '<div class="cap-bot" aria-hidden="true"></div>' +
             '</div>' +
             '<div class="sr live" aria-live="polite" aria-atomic="true"></div>' +
